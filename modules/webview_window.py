@@ -246,6 +246,10 @@ class BrowserWindow(QtWidgets.QWidget):
             self.controls.buttons.layout().addWidget(widget)
         if buttons:
             self.controls.layout().addWidget(self.controls.buttons)
+        else:
+            # Parented but never laid out, so showChildren() would still show it
+            # and leave an invisible url bar reachable with Tab
+            self.controls.buttons.setVisible(False)
         self.controls.progress = QtWidgets.QProgressBar(self.controls)
         self.controls.progress.setTextVisible(False)
         self.controls.progress.setFixedHeight(2)
@@ -296,6 +300,9 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.tabBar().setVisible(self.buttons_enabled and len(self.tab_list) > 1)
         if not background:
             self.tabs.setCurrentIndex(index)
+            # The chrome attaches to the window before any view does, so without
+            # this the back button wins initial focus and the page gets no keys
+            tab.view.setFocus()
         if url:
             tab.load(url)
         return tab
