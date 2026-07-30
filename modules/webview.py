@@ -138,30 +138,35 @@ def css_redirect(url: str, css_selector: str = None, *, minimal=True, cookies: d
             private=True,
         )
     app = create(**kwargs)
+    # Bound once, never re-resolved: minimal=False keeps the chrome, where a popup
+    # opens a tab and would otherwise move app.window.webview out from under these
+    # callbacks - injecting the click-through into the popup and disconnecting a
+    # slot that was never connected to it
+    webview = app.window.webview
     url = QtCore.QUrl(url)
     if cookies and cookies_domain:
         cookies_domain = QtCore.QUrl("https://" + cookies_domain)
         for key, value in cookies.items():
-            app.window.webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
+            webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
     def url_changed(new: QtCore.QUrl):
         if new.host() != url.host():
             app.pipe.put(new.url())
             nonlocal css_selector
             if css_selector:
                 css_selector = None
-                app.window.webview.loadProgress.disconnect(load_progress)
-    app.window.webview.urlChanged.connect(url_changed)
+                webview.loadProgress.disconnect(load_progress)
+    webview.urlChanged.connect(url_changed)
     if css_selector:
         def load_progress(_):
-            app.window.webview.page.runJavaScript(f"""
+            webview.page.runJavaScript(f"""
                 redirectClickElement = document.querySelector({css_selector!r});
                 if (redirectClickElement) {{
                     redirectClickElement.click();
                 }}
             """)
-        app.window.webview.loadProgress.connect(load_progress)
+        webview.loadProgress.connect(load_progress)
     app.window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
-    app.window.webview.setUrl(url)
+    webview.setUrl(url)
     app.window.show()
     app.exec()
 
@@ -174,19 +179,21 @@ def xpath_redirect(url: str, xpath_expression: str = None, *, minimal=True, cook
             private=True,
         )
     app = create(**kwargs)
+    # Bound once, never re-resolved - see css_redirect
+    webview = app.window.webview
     url = QtCore.QUrl(url)
     if cookies and cookies_domain:
         cookies_domain = QtCore.QUrl("https://" + cookies_domain)
         for key, value in cookies.items():
-            app.window.webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
+            webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
     def url_changed(new: QtCore.QUrl):
         if new.host() != url.host():
             app.pipe.put(new.url())
             nonlocal xpath_expression
             if xpath_expression:
                 xpath_expression = None
-                app.window.webview.loadProgress.disconnect(load_progress)
-    app.window.webview.urlChanged.connect(url_changed)
+                webview.loadProgress.disconnect(load_progress)
+    webview.urlChanged.connect(url_changed)
     if xpath_expression:
         if index_match := re.search(r"\[(\d+)\]$", xpath_expression):
             xpath_index = int(index_match.group(1)) - 1
@@ -194,7 +201,7 @@ def xpath_redirect(url: str, xpath_expression: str = None, *, minimal=True, cook
         else:
             xpath_index = 0
         def load_progress(_):
-            app.window.webview.page.runJavaScript(f"""
+            webview.page.runJavaScript(f"""
                 redirectClickElements = document.evaluate({xpath_expression!r}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                 if (redirectClickElements) {{
                     redirectClickElement = redirectClickElements.snapshotItem({xpath_index})
@@ -203,8 +210,8 @@ def xpath_redirect(url: str, xpath_expression: str = None, *, minimal=True, cook
                     }}
                 }}
             """)
-        app.window.webview.loadProgress.connect(load_progress)
+        webview.loadProgress.connect(load_progress)
     app.window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
-    app.window.webview.setUrl(url)
+    webview.setUrl(url)
     app.window.show()
     app.exec()
