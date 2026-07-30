@@ -4445,6 +4445,67 @@ class MainGUI():
             )
             draw_settings_checkbox("software_webview")
 
+            draw_settings_label(
+                "Block ads:",
+                "Blocks ads, trackers and malware domains in the integrated browser, using HaGeZi's Pro DNS blocklist. "
+                "The list is downloaded in the background and refreshed weekly."
+            )
+            draw_settings_checkbox("browser_adblock")
+
+            draw_settings_label(
+                "Download manager:",
+                "Hand downloads from the integrated browser to an external download manager instead of saving them "
+                "directly. Leave the executable empty to save downloads normally. Use {url} in the arguments where the "
+                "download link should go. For IDM on Windows, browse to IDMan.exe and keep the default arguments."
+            )
+            if imgui.button("Configure", width=right_width):
+                def popup_content():
+                    imgui.text("Executable: ")
+                    imgui.same_line()
+                    pos = imgui.get_cursor_pos_x()
+                    changed, value = imgui.input_text("###download_manager_executable", set.download_manager_executable)
+                    setter_extra = lambda _=None: async_thread.run(db.update_settings("download_manager_executable"))
+                    if changed:
+                        set.download_manager_executable = value
+                        setter_extra()
+                    if imgui.begin_popup_context_item("###download_manager_executable_context"):
+                        utils.text_context(set, "download_manager_executable", setter_extra, no_icons=True)
+                        imgui.end_popup()
+                    imgui.same_line()
+                    clicked = imgui.button(icons.folder_open_outline)
+                    imgui.same_line(spacing=0)
+                    args_width = imgui.get_cursor_pos_x() - pos
+                    imgui.dummy(0, 0)
+                    if clicked:
+                        def callback(selected: str):
+                            if selected:
+                                set.download_manager_executable = selected
+                                async_thread.run(db.update_settings("download_manager_executable"))
+                        utils.push_popup(filepicker.FilePicker(
+                            title="Select or drop download manager executable",
+                            start_dir=set.download_manager_executable,
+                            callback=callback
+                        ).tick)
+                    imgui.text("Arguments: ")
+                    imgui.same_line()
+                    imgui.set_cursor_pos_x(pos)
+                    imgui.set_next_item_width(args_width)
+                    changed, value = imgui.input_text("###download_manager_arguments", set.download_manager_arguments)
+                    setter_extra = lambda _=None: async_thread.run(db.update_settings("download_manager_arguments"))
+                    if changed:
+                        set.download_manager_arguments = value
+                        setter_extra()
+                    if imgui.begin_popup_context_item("###download_manager_arguments_context"):
+                        utils.text_context(set, "download_manager_arguments", setter_extra, no_icons=True)
+                        imgui.end_popup()
+                utils.push_popup(
+                    utils.popup, "Configure download manager",
+                    popup_content,
+                    buttons=True,
+                    closable=True,
+                    outside=False
+                )
+
             draw_settings_label("Copy game links as BBcode:")
             draw_settings_checkbox("copy_urls_as_bbcode")
 

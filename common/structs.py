@@ -872,6 +872,7 @@ class Settings:
     bg_notifs_interval          : int
     bg_refresh_interval         : int
     browser                     : Browser.get
+    browser_adblock             : bool
     browser_custom_arguments    : str
     browser_custom_executable   : str
     browser_html                : bool
@@ -887,6 +888,8 @@ class Settings:
     default_tab_is_new          : bool
     display_mode                : DisplayMode
     display_tab                 : Tab.get
+    download_manager_arguments  : str
+    download_manager_executable : str
     downloads_dir               : dict[Os, str]
     ext_background_add          : bool
     ext_highlight_tags          : bool
