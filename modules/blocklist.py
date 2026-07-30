@@ -2,6 +2,12 @@ import time
 
 BLOCKLIST_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt"
 
+# Sanity floor for a downloaded blocklist: the real list carries ~220,000
+# entries, while a GitHub 404 body is a single line and an HTML error page is
+# a few dozen. 1000 separates garbage responses decisively, with a 200x
+# margin below the real list.
+MIN_BLOCKLIST_ENTRIES = 1000
+
 
 def parse_blocklist(text: str):
     return {line.lower() for line in text.splitlines() if line and line[0] != "#"}
@@ -38,7 +44,7 @@ async def ensure_blocklist():
         # globals.cookies, which would leak F95zone session cookies to GitHub.
         # The explicit timeout overrides request_timeout, tuned for small calls.
         data = await api.fetch("GET", BLOCKLIST_URL, cookies=False, timeout=120)
-        if data:
+        if data and len(parse_blocklist(data.decode(errors="replace"))) >= MIN_BLOCKLIST_ENTRIES:
             path.write_bytes(data)
     except Exception:
         pass  # a nicety, never surface and never block
