@@ -31,6 +31,314 @@ def config_qt_flags(debug: bool, software: bool):
     if software: os.environ["QMLSCENE_DEVICE"] = "softwarecontext"
 
 
+def apply_proxy(proxy_config: dict | None):
+    if not proxy_config or proxy_config["type"] == QNetworkProxy.ProxyType.NoProxy:
+        return None
+    proxy = QNetworkProxy()
+    proxy.setType(QNetworkProxy.ProxyType[proxy_config["type"]])
+    proxy.setHostName(proxy_config["host"])
+    proxy.setPort(proxy_config["port"])
+    if proxy_config["username"]:
+        proxy.setUser(proxy_config["username"])
+    if proxy_config["password"]:
+        proxy.setPassword(proxy_config["password"])
+    QNetworkProxy.setApplicationProxy(proxy)
+    if proxy_config["username"]:
+        return (proxy_config["username"], proxy_config["password"])
+    return None
+
+
+def load_extension(path: str):
+    qwebchanneljsfile = QtCore.QFile(":/qtwebchannel/qwebchannel.js")
+    qwebchanneljsfile.open(QtCore.QFile.OpenModeFlag.ReadOnly)
+    qwebchanneljs = qwebchanneljsfile.readAll().data().decode('utf-8')
+    qwebchanneljsfile.close()
+    return qwebchanneljs + pathlib.Path(path).read_text()
+
+
+def make_rpcproxy():
+    from external import async_thread
+    import aiohttp
+    async_thread.setup()
+    class RPCProxy(QtCore.QObject):
+        __slots__ = ("session",)
+        def __init__(self):
+            super().__init__()
+            self.session = aiohttp.ClientSession(loop=async_thread.loop, cookie_jar=aiohttp.DummyCookieJar(loop=async_thread.loop))
+        @QtCore.pyqtSlot(QtCore.QVariant, QtCore.QVariant, QtCore.QVariant, result=QtCore.QVariant)
+        def handle(self, method, path, body):
+            if body is not None:
+                if not isinstance(body, str):
+                    return {}
+                body = body.encode()
+            from common import meta
+            async def _handle():
+                try:
+                    async with self.session.request(method, meta.rpc_url + path, data=body) as req:
+                        return {"status": req.status, "body": base64.b64encode(await req.read()).decode()}
+                except aiohttp.ClientError:
+                    return {}
+            return async_thread.wait(_handle())
+    return RPCProxy()
+
+
+class WebTab:
+
+    def __init__(self, window: "BrowserWindow", extension: str, icon: QtGui.QIcon):
+        from PyQt6 import (
+            QtWebEngineCore,
+            QtWebEngineWidgets,
+        )
+        self.window = window
+        self.extension = extension
+        self.icon = icon
+        self.loading = False
+        self.view = QtWebEngineWidgets.QWebEngineView(window.profile, window)
+        # Attributes stuffed onto the view, kept for the minimal-mode entry points
+        self.view.page = self.view.page()
+        self.view.history = self.view.page.history()
+        self.view.profile = window.profile
+        self.view.settings = self.view.page.settings()
+        self.view.cookieStore = window.profile.cookieStore()
+        self.page = self.view.page
+
+        WebAttribute = QtWebEngineCore.QWebEngineSettings.WebAttribute
+        self.view.settings.setAttribute(WebAttribute.LocalContentCanAccessFileUrls, True)
+        self.view.settings.setAttribute(WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.view.settings.setAttribute(WebAttribute.ScrollAnimatorEnabled, True)
+        # Both default to False, which silently breaks navigator.clipboard, so
+        # forum "copy link" buttons and pasting into the editor do nothing
+        self.view.settings.setAttribute(WebAttribute.JavascriptCanAccessClipboard, True)
+        self.view.settings.setAttribute(WebAttribute.JavascriptCanPaste, True)
+
+        self.page.setBackgroundColor(window.background_color)
+        self.view.loadStarted.connect(self.load_started)
+        self.view.loadProgress.connect(self.load_progress)
+        self.view.loadFinished.connect(self.load_finished)
+        self.view.urlChanged.connect(self.url_changed)
+        self.view.titleChanged.connect(self.title_changed)
+        if window.proxy_auth:
+            self.page.proxyAuthenticationRequired.connect(self.proxy_authenticate)
+        if extension:
+            # One channel per page, all sharing the window's single RPCProxy
+            self.channel = QtWebChannel.QWebChannel(self.view)
+            self.channel.registerObject('rpcproxy', window.rpcproxy)
+            self.page.setWebChannel(self.channel)
+            self.view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+            self.view.customContextMenuRequested.connect(self.context_menu)
+
+    def proxy_authenticate(self, _: QtCore.QUrl, authenticator: QtNetwork.QAuthenticator, __: str):
+        username, password = self.window.proxy_auth
+        authenticator.setUser(username)
+        authenticator.setPassword(password)
+
+    def context_menu(self, pos: QtCore.QPoint):
+        menu = self.view.createStandardContextMenu()
+        data = self.view.lastContextMenuRequest()
+        if (url := data.linkUrl().url()):
+            if "f95zone.to/threads/" in url:
+                add = QtGui.QAction(self.icon, "Add this link to F95Checker", menu)
+                add.triggered.connect(lambda _: self.page.runJavaScript(f"addGame({url!r});"))
+                menu.addAction(add)
+        elif "f95zone.to/threads/" in (url := self.view.url().url()):
+            add = QtGui.QAction(self.icon, "Add this page to F95Checker", menu)
+            add.triggered.connect(lambda _: self.page.runJavaScript(f"addGame({url!r});"))
+            menu.addAction(add)
+        menu.exec(self.view.mapToGlobal(pos))
+
+    @property
+    def is_current(self):
+        return self.window.current_tab is self
+
+    def load(self, url: str):
+        self.view.setUrl(QtCore.QUrl(url))
+
+    def inject(self, suffix: str = ""):
+        if self.extension:
+            self.page.runJavaScript(self.extension + suffix)
+
+    def load_started(self):
+        self.loading = True
+        self.window.sync_controls()
+        self.window.set_progress(self, 1)
+        self.inject()
+
+    def load_progress(self, value: int):
+        self.window.sync_controls()
+        self.window.set_progress(self, max(1, value))
+        self.inject()
+
+    def load_finished(self, _=None):
+        self.loading = False
+        self.window.sync_controls()
+        self.window.set_progress(self, 0)
+        self.inject("\nupdateIcons();")
+
+    def url_changed(self, url: QtCore.QUrl):
+        if self.is_current:
+            self.window.set_url_text(url.url())
+
+    def title_changed(self, title: str):
+        self.window.tab_title_changed(self, title)
+
+    def reload(self):
+        if self.loading:
+            self.view.stop()
+            self.load_finished()
+        else:
+            self.view.reload()
+            self.load_started()
+
+
+class BrowserWindow(QtWidgets.QWidget):
+
+    def __init__(
+        self, *,
+        buttons: bool,
+        private: bool,
+        icon: QtGui.QIcon,
+        background_color: QtGui.QColor,
+        extension: str,
+        rpcproxy,
+        proxy_auth: tuple[str, str] | None,
+        title: str | None,
+    ):
+        super().__init__()
+        from PyQt6 import QtWebEngineCore
+        self.buttons_enabled = buttons
+        self.background_color = background_color
+        self.icon = icon
+        self.extension = extension
+        self.rpcproxy = rpcproxy
+        self.proxy_auth = proxy_auth
+        self.title_fixed = bool(title)
+        self.tab_list = []
+        self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
+
+        self.setWindowIcon(icon)
+        if title:
+            self.setWindowTitle(title)
+        self.setLayout(QtWidgets.QVBoxLayout(self))
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+
+        self.controls = QtWidgets.QWidget(self)
+        self.controls.setObjectName("controls")
+        self.controls.setLayout(QtWidgets.QVBoxLayout(self.controls))
+        self.controls.layout().setContentsMargins(0, 0, 0, 0)
+        self.controls.layout().setSpacing(0)
+        self.controls.buttons = QtWidgets.QWidget(self.controls)
+        self.controls.buttons.setLayout(QtWidgets.QHBoxLayout(self.controls.buttons))
+        self.controls.buttons.layout().setContentsMargins(0, 0, 0, 0)
+        self.controls.buttons.layout().setSpacing(0)
+        self.controls.buttons.back = QtWidgets.QPushButton("󰁍", self.controls.buttons)
+        self.controls.buttons.forward = QtWidgets.QPushButton("󰁔", self.controls.buttons)
+        self.controls.buttons.reload = QtWidgets.QPushButton("󰑐", self.controls.buttons)
+        self.controls.buttons.url = QtWidgets.QLineEdit(self.controls.buttons)
+        self.controls.buttons.extension = QtWidgets.QPushButton(icon, "", self.controls.buttons)
+        for widget in (
+            self.controls.buttons.back,
+            self.controls.buttons.forward,
+            self.controls.buttons.reload,
+            self.controls.buttons.url,
+            self.controls.buttons.extension,
+        ):
+            self.controls.buttons.layout().addWidget(widget)
+        if buttons:
+            self.controls.layout().addWidget(self.controls.buttons)
+        self.controls.progress = QtWidgets.QProgressBar(self.controls)
+        self.controls.progress.setTextVisible(False)
+        self.controls.progress.setFixedHeight(2)
+        self.controls.progress.setMaximum(100)
+        self.controls.layout().addWidget(self.controls.progress)
+
+        # Nav controls act on whichever tab is current
+        self.controls.buttons.back.clicked.connect(lambda _=None: self.current_tab.view.back())
+        self.controls.buttons.forward.clicked.connect(lambda _=None: self.current_tab.view.forward())
+        self.controls.buttons.reload.clicked.connect(lambda _=None: self.current_tab.reload())
+        self.controls.buttons.url.returnPressed.connect(
+            lambda: self.current_tab.load(self.controls.buttons.url.text())
+        )
+        if extension:
+            self.controls.buttons.extension.clicked.connect(
+                lambda _=None: self.current_tab.page.runJavaScript(
+                    f"addGame({self.current_tab.view.url().url()!r});"
+                )
+            )
+        else:
+            self.controls.buttons.extension.setVisible(False)
+
+        self.tabs = QtWidgets.QTabWidget(self)
+        self.tabs.setDocumentMode(True)
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(True)
+        self.tabs.tabBar().setVisible(False)  # shown once a second tab exists
+        self.tabs.currentChanged.connect(lambda _: self.sync_controls())
+        self.tabs.tabCloseRequested.connect(self.close_tab)
+
+        self.layout().addWidget(self.controls, stretch=0)
+        self.layout().addWidget(self.tabs, stretch=1)
+
+    @property
+    def current_tab(self):
+        i = self.tabs.currentIndex()
+        return self.tab_list[i] if 0 <= i < len(self.tab_list) else None
+
+    @property
+    def webview(self):
+        # Kept so cookies()/css_redirect()/xpath_redirect() need no changes
+        return self.current_tab.view
+
+    def new_tab(self, url: str = None, background: bool = False):
+        tab = WebTab(self, self.extension, self.icon)
+        index = self.tabs.addTab(tab.view, "New tab")
+        self.tab_list.insert(index, tab)
+        self.tabs.tabBar().setVisible(self.buttons_enabled and len(self.tab_list) > 1)
+        if not background:
+            self.tabs.setCurrentIndex(index)
+        if url:
+            tab.load(url)
+        return tab
+
+    def close_tab(self, index: int):
+        if len(self.tab_list) <= 1:
+            self.close()
+            return
+        tab = self.tab_list.pop(index)
+        self.tabs.removeTab(index)
+        tab.page.deleteLater()
+        self.tabs.tabBar().setVisible(self.buttons_enabled and len(self.tab_list) > 1)
+
+    def tab_title_changed(self, tab: WebTab, title: str):
+        if tab in self.tab_list:
+            self.tabs.setTabText(self.tab_list.index(tab), title[:30])
+        if tab.is_current and not self.title_fixed:
+            self.setWindowTitle(title)
+
+    def set_url_text(self, url: str):
+        self.controls.buttons.url.setText(url)
+        self.controls.buttons.url.setCursorPosition(0)
+
+    def sync_controls(self):
+        tab = self.current_tab
+        if not tab:
+            return
+        self.controls.buttons.back.setEnabled(tab.view.history.canGoBack())
+        self.controls.buttons.forward.setEnabled(tab.view.history.canGoForward())
+        self.controls.buttons.reload.setText("󰅖" if tab.loading else "󰑐")
+
+    def set_progress(self, tab: WebTab, value: int):
+        if tab is not self.current_tab:
+            return  # a background tab must never drive the chrome
+        self.controls.progress.setValue(value)
+        self.controls.progress.repaint()
+
+    def closeEvent(self, close: QtGui.QCloseEvent):
+        close.accept()
+        for tab in self.tab_list:
+            tab.page.deleteLater()
+
+
 def create(
     *,
     title: str = None,
@@ -51,206 +359,53 @@ def create(
     proxy_config: dict | None,
 ):
     config_qt_flags(debug, software)
+    proxy_auth = apply_proxy(proxy_config)
 
-    if proxy_config and proxy_config["type"] != QNetworkProxy.ProxyType.NoProxy:
-        proxy = QNetworkProxy()
-        proxy.setType(QNetworkProxy.ProxyType[proxy_config["type"]])
-        proxy.setHostName(proxy_config["host"])
-        proxy.setPort(proxy_config["port"])
-        if proxy_config["username"]:
-            proxy.setUser(proxy_config["username"])
-        if proxy_config["password"]:
-            proxy.setPassword(proxy_config["password"])
-        QNetworkProxy.setApplicationProxy(proxy)
-
-    from PyQt6 import (
+    # Must happen before the QApplication exists, and never at module scope:
+    # the whole point of the webview subprocess is keeping QtWebEngine out of
+    # the main process
+    from PyQt6 import (  # noqa: F401
         QtWebEngineCore,
         QtWebEngineWidgets,
     )
 
     app = QtWidgets.QApplication(sys.argv)
     app.pipe = ChildPipe()
+    app.setWheelScrollLines(app.wheelScrollLines() * 2)
     icon_font = QtGui.QFontDatabase.applicationFontFamilies(QtGui.QFontDatabase.addApplicationFont(icon_font))[0]
-    app.window = QtWidgets.QWidget()
     icon = QtGui.QIcon(icon)
-    app.window.setWindowIcon(icon)
+
+    if extension:
+        extension = load_extension(extension)
+        rpcproxy = make_rpcproxy()
+    else:
+        extension = ""
+        rpcproxy = None
+
+    app.window = BrowserWindow(
+        buttons=buttons,
+        private=private,
+        icon=icon,
+        background_color=QtGui.QColor(style_bg),
+        extension=extension,
+        rpcproxy=rpcproxy,
+        proxy_auth=proxy_auth,
+        title=title,
+    )
     if size:
         app.window.resize(*size)
     if pos:
         app.window.move(*pos)
-    app.window.setLayout(QtWidgets.QVBoxLayout(app.window))
-    app.window.layout().setContentsMargins(0, 0, 0, 0)
-    app.window.layout().setSpacing(0)
-
-    app.window.controls = QtWidgets.QWidget()
-    app.window.controls.setObjectName("controls")
-    app.window.controls.setLayout(QtWidgets.QVBoxLayout(app.window.controls))
-    app.window.controls.layout().setContentsMargins(0, 0, 0, 0)
-    app.window.controls.layout().setSpacing(0)
-    app.window.controls.buttons = QtWidgets.QWidget()
-    app.window.controls.buttons.setLayout(QtWidgets.QHBoxLayout(app.window.controls.buttons))
-    app.window.controls.buttons.layout().setContentsMargins(0, 0, 0, 0)
-    app.window.controls.buttons.layout().setSpacing(0)
-    app.window.controls.buttons.back = QtWidgets.QPushButton("󰁍", app.window.controls.buttons)
-    app.window.controls.buttons.forward = QtWidgets.QPushButton("󰁔", app.window.controls.buttons)
-    app.window.controls.buttons.reload = QtWidgets.QPushButton("󰑐", app.window.controls.buttons)
-    app.window.controls.buttons.url = QtWidgets.QLineEdit(app.window.controls.buttons)
-    app.window.controls.buttons.extension = QtWidgets.QPushButton(icon, "", app.window.controls.buttons)
-    app.window.controls.buttons.layout().addWidget(app.window.controls.buttons.back)
-    app.window.controls.buttons.layout().addWidget(app.window.controls.buttons.forward)
-    app.window.controls.buttons.layout().addWidget(app.window.controls.buttons.reload)
-    app.window.controls.buttons.layout().addWidget(app.window.controls.buttons.url)
-    app.window.controls.buttons.layout().addWidget(app.window.controls.buttons.extension)
-    if buttons:
-        app.window.controls.layout().addWidget(app.window.controls.buttons)
-    app.window.controls.progress = QtWidgets.QProgressBar(app.window.controls)
-    app.window.controls.progress.setTextVisible(False)
-    app.window.controls.progress.setFixedHeight(2)
-    app.window.controls.progress.setMaximum(100)
-    app.window.controls.layout().addWidget(app.window.controls.progress)
-
-    app.window.webview = QtWebEngineWidgets.QWebEngineView(QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", app.window), app.window)
-    app.window.webview.page = app.window.webview.page()
-    if proxy_config and proxy_config["username"]:
-        def proxy_authenticator(_: QtCore.QUrl, authenticator: QtNetwork.QAuthenticator, __: str):
-            authenticator.setUser(proxy_config["username"])
-            authenticator.setPassword(proxy_config["password"])
-        app.window.webview.page.proxyAuthenticationRequired.connect(proxy_authenticator)
-    app.window.webview.history = app.window.webview.page.history()
-    app.window.webview.profile = app.window.webview.page.profile()
-    app.window.webview.settings = app.window.webview.page.settings()
-    app.window.webview.cookieStore = app.window.webview.profile.cookieStore()
-
-    def closeEvent(close: QtGui.QCloseEvent):
-        close.accept()
-        app.window.webview.page.deleteLater()
-    app.window.closeEvent = closeEvent
-
-    app.window.webview.settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-    app.window.webview.settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-    app.window.webview.settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
-    app.setWheelScrollLines(app.wheelScrollLines() * 2)
-
-    if title:
-        app.window.setWindowTitle(title)
-    else:
-        def title_changed(title: str):
-            app.window.setWindowTitle(title)
-        app.window.webview.titleChanged.connect(title_changed)
-
-    if extension:
-        qwebchanneljsfile = QtCore.QFile(":/qtwebchannel/qwebchannel.js")
-        qwebchanneljsfile.open(QtCore.QFile.OpenModeFlag.ReadOnly)
-        qwebchanneljs = qwebchanneljsfile.readAll().data().decode('utf-8')
-        qwebchanneljsfile.close()
-        extension = qwebchanneljs + pathlib.Path(extension).read_text()
-        from external import async_thread
-        import aiohttp
-        async_thread.setup()
-        class RPCProxy(QtCore.QObject):
-            __slots__ = ("session",)
-            def __init__(self):
-                super().__init__()
-                self.session = aiohttp.ClientSession(loop=async_thread.loop, cookie_jar=aiohttp.DummyCookieJar(loop=async_thread.loop))
-            @QtCore.pyqtSlot(QtCore.QVariant, QtCore.QVariant, QtCore.QVariant, result=QtCore.QVariant)
-            def handle(self, method, path, body):
-                if body is not None:
-                    if not isinstance(body, str):
-                        return {}
-                    body = body.encode()
-                from common import meta
-                async def _handle():
-                    try:
-                        async with self.session.request(method, meta.rpc_url + path, data=body) as req:
-                            return {"status": req.status, "body": base64.b64encode(await req.read()).decode()}
-                    except aiohttp.ClientError:
-                        return {}
-                return async_thread.wait(_handle())
-        app.window.webview.rpcproxy = RPCProxy()
-        app.window.webview.channel = QtWebChannel.QWebChannel(app.window.webview)
-        app.window.webview.channel.registerObject('rpcproxy', app.window.webview.rpcproxy)
-        app.window.webview.page.setWebChannel(app.window.webview.channel)
-        app.window.webview.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-        def custom_context_menu_requested(pos: QtCore.QPoint):
-            menu = app.window.webview.createStandardContextMenu()
-            data = app.window.webview.lastContextMenuRequest()
-            if (url := data.linkUrl().url()):
-                if "f95zone.to/threads/" in url:
-                    add = QtGui.QAction(icon, "Add this link to F95Checker", menu)
-                    add.triggered.connect(lambda _: app.window.webview.page.runJavaScript(f"addGame({url!r});"))
-                    menu.addAction(add)
-            elif "f95zone.to/threads/" in (url := app.window.webview.url().url()):
-                add = QtGui.QAction(icon, "Add this page to F95Checker", menu)
-                add.triggered.connect(lambda _: app.window.webview.page.runJavaScript(f"addGame({url!r});"))
-                menu.addAction(add)
-            menu.exec(app.window.webview.mapToGlobal(pos))
-        app.window.webview.customContextMenuRequested.connect(custom_context_menu_requested)
-        app.window.controls.buttons.extension.clicked.connect(lambda _: app.window.webview.page.runJavaScript(f"addGame({app.window.webview.url().url()!r});"))
-    else:
-        app.window.controls.buttons.extension.setVisible(False)
-
-    loading = False
-    def load_started():
-        nonlocal loading
-        loading = True
-        app.window.controls.buttons.back.setEnabled(app.window.webview.history.canGoBack())
-        app.window.controls.buttons.forward.setEnabled(app.window.webview.history.canGoForward())
-        app.window.controls.buttons.reload.setText("󰅖")
-        app.window.controls.progress.setValue(1)
-        app.window.controls.progress.repaint()
-        if extension:
-            app.window.webview.page.runJavaScript(extension)
-    def load_progress(value: int):
-        app.window.controls.buttons.back.setEnabled(app.window.webview.history.canGoBack())
-        app.window.controls.buttons.forward.setEnabled(app.window.webview.history.canGoForward())
-        app.window.controls.buttons.reload.setText("󰅖")
-        app.window.controls.progress.setValue(max(1, value))
-        app.window.controls.progress.repaint()
-        if extension:
-            app.window.webview.page.runJavaScript(extension)
-    def load_finished(_=None):
-        nonlocal loading
-        loading = False
-        app.window.controls.buttons.back.setEnabled(app.window.webview.history.canGoBack())
-        app.window.controls.buttons.forward.setEnabled(app.window.webview.history.canGoForward())
-        app.window.controls.buttons.reload.setText("󰑐")
-        app.window.controls.progress.setValue(0)
-        app.window.controls.progress.repaint()
-        if extension:
-            app.window.webview.page.runJavaScript(extension + "\nupdateIcons();")
-    app.window.webview.loadStarted.connect(load_started)
-    app.window.webview.loadProgress.connect(load_progress)
-    app.window.webview.loadFinished.connect(load_finished)
-    def reload(_):
-        if loading:
-            app.window.webview.stop()
-            load_finished()
-        else:
-            app.window.webview.reload()
-            load_started()
-    app.window.controls.buttons.back.clicked.connect(lambda checked=None: app.window.webview.back())
-    app.window.controls.buttons.forward.clicked.connect(lambda checked=None: app.window.webview.forward())
-    app.window.controls.buttons.reload.clicked.connect(reload)
-    def url_changed(url: QtCore.QUrl):
-        app.window.controls.buttons.url.setText(url.url())
-        app.window.controls.buttons.url.setCursorPosition(0)
-    def return_pressed():
-        app.window.webview.setUrl(QtCore.QUrl(app.window.controls.buttons.url.text()))
-    app.window.webview.urlChanged.connect(url_changed)
-    app.window.controls.buttons.url.returnPressed.connect(return_pressed)
 
     def download_requested(download: QtWebEngineCore.QWebEngineDownloadRequest):
         old_path = pathlib.Path(download.downloadDirectory()) / download.downloadFileName()
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(app.window.webview, "Save File", str(old_path), "*" + old_path.suffix)
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(app.window, "Save File", str(old_path), "*" + old_path.suffix)
         if path:
             new_path = pathlib.Path(path)
             download.setDownloadDirectory(str(new_path.parent))
             download.setDownloadFileName(new_path.name)
             download.accept()
-    app.window.webview.profile.downloadRequested.connect(download_requested)
-    def new_window_requested(request: QtWebEngineCore.QWebEngineNewWindowRequest):
-        app.window.webview.setUrl(request.requestedUrl())
-    app.window.webview.page.newWindowRequested.connect(new_window_requested)
+    app.window.profile.downloadRequested.connect(download_requested)
 
     app.window.setStyleSheet(f"""
         #controls * {{
@@ -298,8 +453,11 @@ def create(
             padding-left: 7px;
         }}
     """)
-    app.window.webview.page.setBackgroundColor(QtGui.QColor(style_bg))
 
-    app.window.layout().addWidget(app.window.controls, stretch=0)
-    app.window.layout().addWidget(app.window.webview, stretch=1)
+    tab = app.window.new_tab()
+    # Old hijack behaviour, preserved so this task changes nothing. Task 6
+    # deletes these two lines and connects it inside WebTab.__init__ instead.
+    tab.page.newWindowRequested.connect(
+        lambda request: tab.view.setUrl(request.requestedUrl())
+    )
     return app
