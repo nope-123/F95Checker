@@ -292,6 +292,11 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.tabBar().setVisible(False)  # shown once a second tab exists
         self.tabs.currentChanged.connect(self.tab_changed)
         self.tabs.tabCloseRequested.connect(self.close_tab)
+        # Every index in here is a tab bar index, so dragging a tab has to move
+        # tab_list with it or current_tab and close_tab start hitting the wrong one
+        self.tabs.tabBar().tabMoved.connect(
+            lambda frm, to: self.tab_list.insert(to, self.tab_list.pop(frm))
+        )
 
         if buttons:
             # Only with the chrome: the minimal windows have no tab bar to show
