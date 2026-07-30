@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import sys
 
@@ -8,6 +7,8 @@ from PyQt6 import (
     QtNetwork,
 )
 from PyQt6.QtNetwork import QNetworkProxy
+
+from modules.webview_window import create
 
 # Qt WebEngine doesn't like running alongside other OpenGL
 # applications so we need to run a dedicated multiprocess
@@ -55,22 +56,6 @@ async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=Fa
         return proc
 
 
-def config_qt_flags(debug: bool, software: bool):
-    # Linux had issues with blank login pages and broken contexts, software mode
-    # helped out and might also prevent problems on other platforms
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join((
-        "--no-sandbox",
-        *(("--disable-gpu",) if software else ()),
-        *((
-            "--enable-logging",
-            "--log-level=0",
-        ) if debug else (
-            "--disable-logging",
-        )),
-    ))
-    if software: os.environ["QMLSCENE_DEVICE"] = "softwarecontext"
-
-
 def create_kwargs():
     from common.structs import ProxyType
     from modules import (
@@ -111,9 +96,6 @@ def create_kwargs():
         style_corner_radius=f"{globals.settings.style_corner_radius}px",
         proxy_config=proxy_config,
     )
-
-
-from modules.webview_window import create
 
 
 def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):

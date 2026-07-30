@@ -1,4 +1,5 @@
 import base64
+import os
 import pathlib
 import sys
 
@@ -12,7 +13,22 @@ from PyQt6 import (
 from PyQt6.QtNetwork import QNetworkProxy
 
 from common.structs import ChildPipe
-from modules.webview import config_qt_flags
+
+
+def config_qt_flags(debug: bool, software: bool):
+    # Linux had issues with blank login pages and broken contexts, software mode
+    # helped out and might also prevent problems on other platforms
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join((
+        "--no-sandbox",
+        *(("--disable-gpu",) if software else ()),
+        *((
+            "--enable-logging",
+            "--log-level=0",
+        ) if debug else (
+            "--disable-logging",
+        )),
+    ))
+    if software: os.environ["QMLSCENE_DEVICE"] = "softwarecontext"
 
 
 def create(
