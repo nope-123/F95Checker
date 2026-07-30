@@ -117,6 +117,7 @@ class WebTab:
         self.view.loadFinished.connect(self.load_finished)
         self.view.urlChanged.connect(self.url_changed)
         self.view.titleChanged.connect(self.title_changed)
+        self.page.newWindowRequested.connect(self.new_window_requested)
         if window.proxy_auth:
             self.page.proxyAuthenticationRequired.connect(self.proxy_authenticate)
         if extension:
@@ -126,6 +127,18 @@ class WebTab:
             self.page.setWebChannel(self.channel)
             self.view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
             self.view.customContextMenuRequested.connect(self.context_menu)
+
+    def new_window_requested(self, request):
+        from PyQt6 import QtWebEngineCore
+        if not self.window.buttons_enabled:
+            # Without the chrome there is no tab bar and no Ctrl+W, so a popup tab
+            # would be invisible and unclosable, and window.webview would start
+            # resolving to it and break the redirect click-through. Old behaviour
+            return self.view.setUrl(request.requestedUrl())
+        destination = QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType
+        tab = self.window.new_tab(background=request.destination() is destination.InNewBackgroundTab)
+        # openIn() preserves the opener relationship, setUrl() does not
+        request.openIn(tab.page)
 
     def proxy_authenticate(self, _: QtCore.QUrl, authenticator: QtNetwork.QAuthenticator, __: str):
         username, password = self.window.proxy_auth
@@ -277,8 +290,17 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
         self.tabs.tabBar().setVisible(False)  # shown once a second tab exists
-        self.tabs.currentChanged.connect(lambda _: self.sync_controls())
+        self.tabs.currentChanged.connect(self.tab_changed)
         self.tabs.tabCloseRequested.connect(self.close_tab)
+
+        if buttons:
+            # Only with the chrome: the minimal windows have no tab bar to show
+            for keys, handler in (
+                ("Ctrl+T", lambda: self.new_tab("about:blank")),
+                ("Ctrl+W", lambda: self.close_tab(self.tabs.currentIndex())),
+                ("Ctrl+Tab", self.next_tab),
+            ):
+                QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(handler)
 
         self.layout().addWidget(self.controls, stretch=0)
         self.layout().addWidget(self.tabs, stretch=1)
@@ -313,8 +335,27 @@ class BrowserWindow(QtWidgets.QWidget):
             return
         tab = self.tab_list.pop(index)
         self.tabs.removeTab(index)
-        tab.page.deleteLater()
+        # removeTab only hides the view and leaves it parented to the tab widget,
+        # so deleting just the page would leak the view and leave it holding a
+        # dangling page. The page is a child of the view, so the view takes both.
+        # Deferred because this runs inside QTabBar's mouse handler
+        tab.view.deleteLater()
         self.tabs.tabBar().setVisible(self.buttons_enabled and len(self.tab_list) > 1)
+
+    def next_tab(self):
+        if len(self.tab_list) > 1:
+            self.tabs.setCurrentIndex((self.tabs.currentIndex() + 1) % len(self.tab_list))
+
+    def tab_changed(self, _: int = -1):
+        # The whole chrome follows whichever tab is now current
+        tab = self.current_tab
+        self.sync_controls()
+        if not tab:
+            return
+        self.set_url_text(tab.view.url().url())
+        self.set_progress(tab, 1 if tab.loading else 0)
+        if not self.title_fixed:
+            self.setWindowTitle(tab.view.title())
 
     def tab_title_changed(self, tab: WebTab, title: str):
         if tab in self.tab_list:
@@ -343,7 +384,7 @@ class BrowserWindow(QtWidgets.QWidget):
     def closeEvent(self, close: QtGui.QCloseEvent):
         close.accept()
         for tab in self.tab_list:
-            tab.page.deleteLater()
+            tab.view.deleteLater()
 
 
 def create(
@@ -461,10 +502,5 @@ def create(
         }}
     """)
 
-    tab = app.window.new_tab()
-    # Old hijack behaviour, preserved so this task changes nothing. Task 6
-    # deletes these two lines and connects it inside WebTab.__init__ instead.
-    tab.page.newWindowRequested.connect(
-        lambda request: tab.view.setUrl(request.requestedUrl())
-    )
+    app.window.new_tab()
     return app
