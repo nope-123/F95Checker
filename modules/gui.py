@@ -62,6 +62,7 @@ from external import (
 )
 from modules import (
     api,
+    blocklist,
     callbacks,
     colors,
     db,
@@ -4450,7 +4451,8 @@ class MainGUI():
                 "Blocks ads, trackers and malware domains in the integrated browser, using HaGeZi's Pro DNS blocklist. "
                 "The list is downloaded in the background and refreshed weekly."
             )
-            draw_settings_checkbox("browser_adblock")
+            if draw_settings_checkbox("browser_adblock"):
+                async_thread.run(blocklist.ensure_blocklist())
 
             draw_settings_label(
                 "Download manager:",

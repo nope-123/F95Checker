@@ -26,6 +26,9 @@ def main():
     from modules import api, db
     with db.setup(), api.setup():
 
+        from modules import blocklist
+        async_thread.run(blocklist.ensure_blocklist())
+
         from modules import gui
         globals.gui = gui.MainGUI()
 
