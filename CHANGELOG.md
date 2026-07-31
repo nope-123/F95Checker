@@ -15,6 +15,9 @@
 - Locally tracked playtime duration (#290 by @cicklolwut)
 - Label reordering (#291 by @px-pole & WillyJL)
 - Donor DDL downloads can now be retried when failed (by @WillyJL)
+- Tabs in the integrated browser: opening multiple pages reuses one window instead of spawning a new process each time
+- Ad and tracker blocking in the integrated browser, using HaGeZi's Pro blocklist
+- Option to hand off integrated browser downloads to an external download manager (e.g. IDM) instead of the save dialog
 
 ### Updated:
 - Animations (Video and GIF) and Comics (CG, Comics, Manga and Pinup) thread types are detected properly now, "Collection" and "SiteRip" prefixes are now ignored (by @WillyJL)
@@ -26,6 +29,7 @@
 - Redraw UI when popups are opened/closed (by @WillyJL)
 - Donor DDL downloads can now be aborted correctly when stuck (by @WillyJL)
 - Limit image downloads to 2 per second just in case (by @WillyJL)
+- Fix clipboard access not working in the integrated browser
 
 ### Removed:
 - Collection and SiteRip thread types are gone, these are now detected as the appropriate animation/comic/game type
