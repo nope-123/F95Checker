@@ -133,14 +133,22 @@ class WebTab:
             self.view.customContextMenuRequested.connect(self.context_menu)
 
     def new_window_requested(self, request):
-        from PyQt6 import QtWebEngineCore
         if not self.window.tabs_enabled:
             # The one-shot windows must stay one page: a popup tab there would be
             # invisible and unclosable, and the login and redirect flows watch this
             # one view for the navigation they are waiting on. Load it in place
             return self.view.setUrl(request.requestedUrl())
-        destination = QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType
-        tab = self.window.new_tab(background=request.destination() is destination.InNewBackgroundTab)
+        # A popup straight to a host we already block is an ad. Opening a tab for it and
+        # then blocking its contents is the worst of both: you get a broken tab AND lose
+        # your place. Drop it before the tab exists, which is what a real blocker does
+        if (blocker := self.window.blocker) and blocker.hosts:
+            from modules.blocklist import blocked
+            if blocked(request.requestedUrl().host(), blocker.hosts):
+                return
+        # Always background, never focus. Ad-gated download hosts fire a popup on the
+        # same click that starts the download, so focusing it steals the page out from
+        # under you. Ctrl/middle-clicked links were already background anyway
+        tab = self.window.new_tab(background=True)
         # openIn() preserves the opener relationship, setUrl() does not
         request.openIn(tab.page)
 
@@ -233,6 +241,10 @@ class BrowserWindow(QtWidgets.QWidget):
         self.rpcproxy = rpcproxy
         self.proxy_auth = proxy_auth
         self.title_fixed = bool(title)
+        # install_blocker sets this only when there is a list to install, so it has to
+        # exist up front: new_window_requested reads it on every popup, and an
+        # AttributeError raised inside a Qt slot aborts the process and every open tab
+        self.blocker = None
         self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
@@ -444,13 +456,17 @@ def make_blocker(path: str):
     main_frame = QtWebEngineCore.QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame
 
     class Blocker(QtWebEngineCore.QWebEngineUrlRequestInterceptor):
+        hosts = None  # exposed so popups can be dropped before a tab is ever built
+
         def interceptRequest(self, info):
             # Never block the top-level document: navigating *to* a blocked
             # host must fail normally (DNS/404/etc), not with a silent blank block
             if info.resourceType() is not main_frame and blocked(info.requestUrl().host(), hosts):
                 info.block(True)
 
-    return Blocker()
+    blocker = Blocker()
+    blocker.hosts = hosts
+    return blocker
 
 
 def install_blocker(window: BrowserWindow, blocklist_file: str | None, tabs: bool):
