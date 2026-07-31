@@ -117,7 +117,7 @@ def cookies(url: str, *, minimal=True, **kwargs):
             extension=False,
             private=True,
         )
-    app = create(**kwargs | dict(buttons=False, extension=False, private=True))
+    app = create(**kwargs | dict(buttons=False, extension=False, private=True, tabs=False))
     url = QtCore.QUrl(url)
     def on_cookie_add(cookie: QtNetwork.QNetworkCookie):
         name = cookie.name().data().decode('utf-8')
@@ -137,11 +137,13 @@ def css_redirect(url: str, css_selector: str = None, *, minimal=True, cookies: d
             extension=False,
             private=True,
         )
-    app = create(**kwargs)
-    # Bound once, never re-resolved: minimal=False keeps the chrome, where a popup
-    # opens a tab and would otherwise move app.window.webview out from under these
-    # callbacks - injecting the click-through into the popup and disconnecting a
-    # slot that was never connected to it
+    # tabs=False unconditionally: this is a resolver, not a browser, whatever
+    # minimal says. A click-through that opens a popup has to land in this view,
+    # or urlChanged never fires here and pipe.get_async() waits forever
+    app = create(**kwargs | dict(tabs=False))
+    # Bound once, never re-resolved, so no tab can move it out from under these
+    # callbacks: injecting the click-through into the wrong page, or disconnecting
+    # a slot that was never connected to it
     webview = app.window.webview
     url = QtCore.QUrl(url)
     if cookies and cookies_domain:
@@ -178,7 +180,7 @@ def xpath_redirect(url: str, xpath_expression: str = None, *, minimal=True, cook
             extension=False,
             private=True,
         )
-    app = create(**kwargs)
+    app = create(**kwargs | dict(tabs=False))
     # Bound once, never re-resolved - see css_redirect
     webview = app.window.webview
     url = QtCore.QUrl(url)

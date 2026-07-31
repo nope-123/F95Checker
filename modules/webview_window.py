@@ -130,10 +130,10 @@ class WebTab:
 
     def new_window_requested(self, request):
         from PyQt6 import QtWebEngineCore
-        if not self.window.buttons_enabled:
-            # Without the chrome there is no tab bar and no Ctrl+W, so a popup tab
-            # would be invisible and unclosable, and window.webview would start
-            # resolving to it and break the redirect click-through. Old behaviour
+        if not self.window.tabs_enabled:
+            # The one-shot windows must stay one page: a popup tab there would be
+            # invisible and unclosable, and the login and redirect flows watch this
+            # one view for the navigation they are waiting on. Load it in place
             return self.view.setUrl(request.requestedUrl())
         destination = QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType
         tab = self.window.new_tab(background=request.destination() is destination.InNewBackgroundTab)
@@ -208,6 +208,7 @@ class BrowserWindow(QtWidgets.QWidget):
     def __init__(
         self, *,
         buttons: bool,
+        tabs: bool,
         private: bool,
         icon: QtGui.QIcon,
         background_color: QtGui.QColor,
@@ -219,6 +220,7 @@ class BrowserWindow(QtWidgets.QWidget):
         super().__init__()
         from PyQt6 import QtWebEngineCore
         self.buttons_enabled = buttons
+        self.tabs_enabled = tabs
         self.background_color = background_color
         self.icon = icon
         self.extension = extension
@@ -396,6 +398,7 @@ def create(
     *,
     title: str = None,
     buttons: bool = True,
+    tabs: bool = True,
     size: tuple[int, int] = None,
     pos: tuple[int, int] = None,
     debug: bool,
@@ -437,6 +440,7 @@ def create(
 
     app.window = BrowserWindow(
         buttons=buttons,
+        tabs=tabs,
         private=private,
         icon=icon,
         background_color=QtGui.QColor(style_bg),
