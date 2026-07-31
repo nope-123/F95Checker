@@ -1,7 +1,9 @@
 import base64
+import json
 import os
 import pathlib
 import sys
+import threading
 
 from PyQt6 import (
     QtCore,
@@ -204,6 +206,8 @@ class WebTab:
 
 
 class BrowserWindow(QtWidgets.QWidget):
+    # Qt only recognizes signals declared as class attributes
+    url_received = QtCore.pyqtSignal(str)
 
     def __init__(
         self, *,
@@ -392,6 +396,20 @@ class BrowserWindow(QtWidgets.QWidget):
         close.accept()
         for tab in self.tab_list:
             tab.view.deleteLater()
+
+
+def watch_stdin(window: BrowserWindow):
+    # A thread, not QSocketNotifier: that one ignores non-socket handles on
+    # Windows. Widgets are GUI-thread only, so hand the url over as a signal
+    def reader():
+        for line in sys.stdin:
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if url := message.get("open"):
+                window.url_received.emit(url)
+    threading.Thread(target=reader, daemon=True).start()
 
 
 def create(

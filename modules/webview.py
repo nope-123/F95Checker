@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import sys
@@ -8,14 +9,22 @@ from PyQt6 import (
 )
 from PyQt6.QtNetwork import QNetworkProxy
 
-from modules.webview_window import create
+from modules.webview_window import (
+    create,
+    watch_stdin,
+)
 
 # Qt WebEngine doesn't like running alongside other OpenGL
 # applications so we need to run a dedicated multiprocess
 
+# Opening N selected games fires N tasks on the one async_thread loop, all
+# suspending inside create_subprocess_exec, so the reuse check and the spawn
+# have to be atomic or every one of them spawns its own window
+browser_lock = asyncio.Lock()
+
 
 async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=False, **kwargs):
-    import asyncio
+    import contextlib
     import imgui
     import shlex
     import subprocess
@@ -41,19 +50,35 @@ async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=Fa
     args = [action, *args]
     kwargs = create_kwargs() | kwargs
 
-    proc = await asyncio.create_subprocess_exec(
-        *shlex.split(globals.start_cmd),
-        "webview-daemon",
-        json.dumps(args),
-        json.dumps(kwargs),
-        stdout=(subprocess.PIPE if pipe else None),
-    )
+    # Browsing shares one process, one window: later opens become tabs. The
+    # one-shot windows (login, DDL resolvers) keep spawning their own process
+    reuse = action == "open"
 
-    if pipe:
-        return DaemonPipe(proc)
-    else:
-        DaemonProcess(proc)
-        return proc
+    async with (browser_lock if reuse else contextlib.nullcontext()):
+        if reuse and globals.browser_daemon:
+            try:
+                globals.browser_daemon.put({"open": args[1]})
+                return None
+            except DaemonPipe.DaemonPipeExit:
+                globals.browser_daemon = None
+
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(globals.start_cmd),
+            "webview-daemon",
+            json.dumps(args),
+            json.dumps(kwargs),
+            stdin=(subprocess.PIPE if reuse else None),
+            stdout=(subprocess.PIPE if pipe else None),
+        )
+
+        if pipe:
+            return DaemonPipe(proc)
+        elif reuse:
+            globals.browser_daemon = DaemonPipe(proc)
+            return proc
+        else:
+            DaemonProcess(proc)
+            return proc
 
 
 def create_kwargs():
@@ -106,6 +131,13 @@ def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, 
         for key, value in cookies.items():
             app.window.webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
     app.window.webview.setUrl(url)
+    # Later opens arrive on stdin instead of spawning another browser
+    def open_tab(url: str):
+        app.window.new_tab(url)
+        app.window.raise_()
+        app.window.activateWindow()
+    app.window.url_received.connect(open_tab)
+    watch_stdin(app.window)
     app.window.show()
     app.exec()
 

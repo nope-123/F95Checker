@@ -8,6 +8,7 @@ import sys
 
 from common.structs import (
     Browser,
+    DaemonPipe,
     Game,
     OldGame,
     Os,
@@ -205,6 +206,7 @@ refresh_task: Future = None
 games: dict[int, Game] = None
 cookies: dict[str, str] = None
 popup_stack: list[Popup] = []
+browser_daemon: DaemonPipe = None
 popup_stack_changed: bool = False
 updated_games: dict[int, OldGame] = {}
 updated_games_sorted_ids: list[int] = []
