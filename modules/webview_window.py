@@ -306,7 +306,7 @@ class BrowserWindow(QtWidgets.QWidget):
             lambda frm, to: self.tab_list.insert(to, self.tab_list.pop(frm))
         )
 
-        if buttons:
+        if buttons and tabs:
             # Only with the chrome: the minimal windows have no tab bar to show
             for keys, handler in (
                 ("Ctrl+T", lambda: self.new_tab("about:blank")),
@@ -332,7 +332,7 @@ class BrowserWindow(QtWidgets.QWidget):
         tab = WebTab(self, self.extension, self.icon)
         index = self.tabs.addTab(tab.view, "New tab")
         self.tab_list.insert(index, tab)
-        self.tabs.tabBar().setVisible(self.buttons_enabled and len(self.tab_list) > 1)
+        self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
         if not background:
             self.tabs.setCurrentIndex(index)
             # The chrome attaches to the window before any view does, so without
@@ -353,7 +353,7 @@ class BrowserWindow(QtWidgets.QWidget):
         # dangling page. The page is a child of the view, so the view takes both.
         # Deferred because this runs inside QTabBar's mouse handler
         tab.view.deleteLater()
-        self.tabs.tabBar().setVisible(self.buttons_enabled and len(self.tab_list) > 1)
+        self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
 
     def next_tab(self):
         if len(self.tab_list) > 1:
@@ -398,6 +398,7 @@ class BrowserWindow(QtWidgets.QWidget):
         close.accept()
         for tab in self.tab_list:
             tab.view.deleteLater()
+        self.tab_list.clear()
 
 
 def watch_stdin(window: BrowserWindow):
@@ -407,10 +408,10 @@ def watch_stdin(window: BrowserWindow):
         for line in sys.stdin:
             try:
                 message = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if url := message.get("open"):
-                window.url_received.emit(url, message.get("cookies") or {})
+                if url := message.get("open"):
+                    window.url_received.emit(url, message.get("cookies") or {})
+            except Exception:
+                continue  # one bad line must never kill the reader for good
     threading.Thread(target=reader, daemon=True).start()
 
 
