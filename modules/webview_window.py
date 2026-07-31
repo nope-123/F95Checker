@@ -298,6 +298,10 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
         self.tabs.tabBar().setVisible(False)  # shown once a second tab exists
+        # Qt has no middle-click-to-close, so filter the tab bar's own events. A filter
+        # rather than a QTabBar subclass: nothing to construct before the tabs exist, and
+        # close_tab is already on self
+        self.tabs.tabBar().installEventFilter(self)
         self.tabs.currentChanged.connect(self.tab_changed)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         # Every index in here is a tab bar index, so dragging a tab has to move
@@ -341,6 +345,15 @@ class BrowserWindow(QtWidgets.QWidget):
         if url:
             tab.load(url)
         return tab
+
+    def eventFilter(self, obj, event):
+        if obj is self.tabs.tabBar() and event.type() is QtCore.QEvent.Type.MouseButtonRelease:
+            if event.button() is QtCore.Qt.MouseButton.MiddleButton:
+                # tabAt returns -1 off the end of the strip, where a click closes nothing
+                if (index := obj.tabAt(event.position().toPoint())) >= 0:
+                    self.close_tab(index)
+                    return True
+        return super().eventFilter(obj, event)
 
     def close_tab(self, index: int):
         if len(self.tab_list) <= 1:
