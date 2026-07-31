@@ -2,6 +2,8 @@ import base64
 import json
 import os
 import pathlib
+import shlex
+import subprocess
 import sys
 import threading
 
@@ -468,6 +470,7 @@ def create(
     style_corner_radius: str,
     proxy_config: dict | None,
     blocklist_file: str | None,
+    download_manager: tuple[str, str],
 ):
     config_qt_flags(debug, software)
     proxy_auth = apply_proxy(proxy_config)
@@ -510,7 +513,7 @@ def create(
     if pos:
         app.window.move(*pos)
 
-    def download_requested(download: QtWebEngineCore.QWebEngineDownloadRequest):
+    def save_dialog(download: QtWebEngineCore.QWebEngineDownloadRequest):
         old_path = pathlib.Path(download.downloadDirectory()) / download.downloadFileName()
         path, _ = QtWidgets.QFileDialog.getSaveFileName(app.window, "Save File", str(old_path), "*" + old_path.suffix)
         if path:
@@ -518,6 +521,31 @@ def create(
             download.setDownloadDirectory(str(new_path.parent))
             download.setDownloadFileName(new_path.name)
             download.accept()
+
+    def download_requested(download: QtWebEngineCore.QWebEngineDownloadRequest):
+        # download_manager crossed the process boundary as JSON, so this is a
+        # list, not a tuple, but unpacking doesn't care
+        executable, arguments = download_manager
+        if executable:
+            url = download.url().url()
+            # No shell, and {url} is substituted AFTER shlex.split, so nothing
+            # in this web-controlled URL can be parsed as a quote or separator.
+            # The executable stays out of shlex.split because POSIX rules eat
+            # the backslashes in paths like C:\Program Files\...
+            args = [executable, *(arg.replace("{url}", url) for arg in shlex.split(arguments))]
+            try:
+                subprocess.Popen(
+                    args,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except OSError:
+                save_dialog(download)  # bad path: user still gets their file
+            else:
+                download.cancel()
+            return
+        save_dialog(download)
     app.window.profile.downloadRequested.connect(download_requested)
 
     app.window.setStyleSheet(f"""

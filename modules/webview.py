@@ -125,6 +125,10 @@ def create_kwargs():
         blocklist_file=(
             str(blocklist_path()) if globals.settings.browser_adblock else None
         ),
+        download_manager=(
+            globals.settings.download_manager_executable,
+            globals.settings.download_manager_arguments,
+        ),
     )
 
 
