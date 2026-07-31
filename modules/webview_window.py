@@ -532,16 +532,21 @@ def create(
             # in this web-controlled URL can be parsed as a quote or separator.
             # The executable stays out of shlex.split because POSIX rules eat
             # the backslashes in paths like C:\Program Files\...
-            args = [executable, *(arg.replace("{url}", url) for arg in shlex.split(arguments))]
             try:
+                # arguments is free-text from settings; an unmatched quote makes
+                # shlex.split raise ValueError, so it has to stay inside the try
+                # too, or a bad template crashes this slot instead of falling
+                # back -- and an exception escaping a signal slot takes every
+                # open tab down with it
+                args = [executable, *(arg.replace("{url}", url) for arg in shlex.split(arguments))]
                 subprocess.Popen(
                     args,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-            except OSError:
-                save_dialog(download)  # bad path: user still gets their file
+            except (OSError, ValueError):
+                save_dialog(download)  # bad path or bad template: user still gets their file
             else:
                 download.cancel()
             return
