@@ -161,11 +161,11 @@ class WebTab:
         if (url := data.linkUrl().url()):
             if "f95zone.to/threads/" in url:
                 add = QtGui.QAction(self.icon, "Add this link to F95Checker", menu)
-                add.triggered.connect(lambda _: self.page.runJavaScript(f"addGame({url!r});"))
+                add.triggered.connect(lambda _: self.add_game(url))
                 menu.addAction(add)
         elif "f95zone.to/threads/" in (url := self.view.url().url()):
             add = QtGui.QAction(self.icon, "Add this page to F95Checker", menu)
-            add.triggered.connect(lambda _: self.page.runJavaScript(f"addGame({url!r});"))
+            add.triggered.connect(lambda _: self.add_game(url))
             menu.addAction(add)
         menu.exec(self.view.mapToGlobal(pos))
 
@@ -177,8 +177,18 @@ class WebTab:
         self.view.setUrl(QtCore.QUrl(url))
 
     def inject(self, suffix: str = ""):
-        if self.extension:
+        # Only on f95zone: integrated.js decorates thread links and does nothing
+        # anywhere else, but it declares its helpers with a top-level `var`, which
+        # throws on a hardened page like mega.nz that makes its global object
+        # non-extensible -- and that page then shows the error to the user
+        if self.extension and "f95zone.to" in self.view.url().host():
             self.page.runJavaScript(self.extension + suffix)
+
+    def add_game(self, url: str):
+        # Injected on demand rather than relying on inject(): the page you are on can
+        # be anything, since you can right click an f95zone thread link on any site
+        if self.extension:
+            self.page.runJavaScript(self.extension + f"\naddGame({url!r});")
 
     def load_started(self):
         self.loading = True
@@ -289,9 +299,7 @@ class BrowserWindow(QtWidgets.QWidget):
         b.url.returnPressed.connect(lambda: self.current_tab.load(b.url.text()))
         if extension:
             b.extension.clicked.connect(
-                lambda _=None: self.current_tab.page.runJavaScript(
-                    f"addGame({self.current_tab.view.url().url()!r});"
-                )
+                lambda _=None: self.current_tab.add_game(self.current_tab.view.url().url())
             )
         else:
             b.extension.setVisible(False)
