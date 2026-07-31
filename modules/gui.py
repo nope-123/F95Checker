@@ -4100,6 +4100,51 @@ class MainGUI():
                 async_thread.run(db.update_settings(setting))
             return changed
 
+        def draw_exe_and_args(exe_setting: str, args_setting: str, picker_title: str, popup_title: str):
+            # Shared by the custom browser and the download manager: both are an
+            # executable with a browse button plus a free-text argument line
+            def field(setting: str):
+                changed, value = imgui.input_text(f"###{setting}", getattr(set, setting))
+                setter_extra = lambda _=None: async_thread.run(db.update_settings(setting))
+                if changed:
+                    setattr(set, setting, value)
+                    setter_extra()
+                if imgui.begin_popup_context_item(f"###{setting}_context"):
+                    utils.text_context(set, setting, setter_extra, no_icons=True)
+                    imgui.end_popup()
+            def popup_content():
+                imgui.text("Executable: ")
+                imgui.same_line()
+                pos = imgui.get_cursor_pos_x()
+                field(exe_setting)
+                imgui.same_line()
+                clicked = imgui.button(icons.folder_open_outline)
+                imgui.same_line(spacing=0)
+                args_width = imgui.get_cursor_pos_x() - pos
+                imgui.dummy(0, 0)
+                if clicked:
+                    def callback(selected: str):
+                        if selected:
+                            setattr(set, exe_setting, selected)
+                            async_thread.run(db.update_settings(exe_setting))
+                    utils.push_popup(filepicker.FilePicker(
+                        title=picker_title,
+                        start_dir=getattr(set, exe_setting),
+                        callback=callback
+                    ).tick)
+                imgui.text("Arguments: ")
+                imgui.same_line()
+                imgui.set_cursor_pos_x(pos)
+                imgui.set_next_item_width(args_width)
+                field(args_setting)
+            utils.push_popup(
+                utils.popup, popup_title,
+                popup_content,
+                buttons=True,
+                closable=True,
+                outside=False
+            )
+
         width = imgui.get_content_region_available_width()
         height = self.scaled(100)
         if utils.is_refreshing():
@@ -4381,51 +4426,9 @@ class MainGUI():
             if set.browser.custom:
                 draw_settings_label("Custom browser:")
                 if imgui.button("Configure", width=right_width):
-                    def popup_content():
-                        imgui.text("Executable: ")
-                        imgui.same_line()
-                        pos = imgui.get_cursor_pos_x()
-                        changed, value = imgui.input_text("###browser_custom_executable", set.browser_custom_executable)
-                        setter_extra = lambda _=None: async_thread.run(db.update_settings("browser_custom_executable"))
-                        if changed:
-                            set.browser_custom_executable = value
-                            setter_extra()
-                        if imgui.begin_popup_context_item("###browser_custom_executable_context"):
-                            utils.text_context(set, "browser_custom_executable", setter_extra, no_icons=True)
-                            imgui.end_popup()
-                        imgui.same_line()
-                        clicked = imgui.button(icons.folder_open_outline)
-                        imgui.same_line(spacing=0)
-                        args_width = imgui.get_cursor_pos_x() - pos
-                        imgui.dummy(0, 0)
-                        if clicked:
-                            def callback(selected: str):
-                                if selected:
-                                    set.browser_custom_executable = selected
-                                    async_thread.run(db.update_settings("browser_custom_executable"))
-                            utils.push_popup(filepicker.FilePicker(
-                                title="Select or drop browser executable",
-                                start_dir=set.browser_custom_executable,
-                                callback=callback
-                            ).tick)
-                        imgui.text("Arguments: ")
-                        imgui.same_line()
-                        imgui.set_cursor_pos_x(pos)
-                        imgui.set_next_item_width(args_width)
-                        changed, value = imgui.input_text("###browser_custom_arguments", set.browser_custom_arguments)
-                        setter_extra = lambda _=None: async_thread.run(db.update_settings("browser_custom_arguments"))
-                        if changed:
-                            set.browser_custom_arguments = value
-                            setter_extra()
-                        if imgui.begin_popup_context_item("###browser_custom_arguments_context"):
-                            utils.text_context(set, "browser_custom_arguments", setter_extra, no_icons=True)
-                            imgui.end_popup()
-                    utils.push_popup(
-                        utils.popup, "Configure custom browser",
-                        popup_content,
-                        buttons=True,
-                        closable=True,
-                        outside=False
+                    draw_exe_and_args(
+                        "browser_custom_executable", "browser_custom_arguments",
+                        "Select or drop browser executable", "Configure custom browser",
                     )
             else:
                 draw_settings_label("Use private mode:")
@@ -4461,51 +4464,9 @@ class MainGUI():
                 "download link should go. For IDM on Windows, browse to IDMan.exe and keep the default arguments."
             )
             if imgui.button("Configure", width=right_width):
-                def popup_content():
-                    imgui.text("Executable: ")
-                    imgui.same_line()
-                    pos = imgui.get_cursor_pos_x()
-                    changed, value = imgui.input_text("###download_manager_executable", set.download_manager_executable)
-                    setter_extra = lambda _=None: async_thread.run(db.update_settings("download_manager_executable"))
-                    if changed:
-                        set.download_manager_executable = value
-                        setter_extra()
-                    if imgui.begin_popup_context_item("###download_manager_executable_context"):
-                        utils.text_context(set, "download_manager_executable", setter_extra, no_icons=True)
-                        imgui.end_popup()
-                    imgui.same_line()
-                    clicked = imgui.button(icons.folder_open_outline)
-                    imgui.same_line(spacing=0)
-                    args_width = imgui.get_cursor_pos_x() - pos
-                    imgui.dummy(0, 0)
-                    if clicked:
-                        def callback(selected: str):
-                            if selected:
-                                set.download_manager_executable = selected
-                                async_thread.run(db.update_settings("download_manager_executable"))
-                        utils.push_popup(filepicker.FilePicker(
-                            title="Select or drop download manager executable",
-                            start_dir=set.download_manager_executable,
-                            callback=callback
-                        ).tick)
-                    imgui.text("Arguments: ")
-                    imgui.same_line()
-                    imgui.set_cursor_pos_x(pos)
-                    imgui.set_next_item_width(args_width)
-                    changed, value = imgui.input_text("###download_manager_arguments", set.download_manager_arguments)
-                    setter_extra = lambda _=None: async_thread.run(db.update_settings("download_manager_arguments"))
-                    if changed:
-                        set.download_manager_arguments = value
-                        setter_extra()
-                    if imgui.begin_popup_context_item("###download_manager_arguments_context"):
-                        utils.text_context(set, "download_manager_arguments", setter_extra, no_icons=True)
-                        imgui.end_popup()
-                utils.push_popup(
-                    utils.popup, "Configure download manager",
-                    popup_content,
-                    buttons=True,
-                    closable=True,
-                    outside=False
+                draw_exe_and_args(
+                    "download_manager_executable", "download_manager_arguments",
+                    "Select or drop download manager executable", "Configure download manager",
                 )
 
             draw_settings_label("Copy game links as BBcode:")

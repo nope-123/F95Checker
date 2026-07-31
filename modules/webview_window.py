@@ -141,10 +141,8 @@ class WebTab:
         # A popup straight to a host we already block is an ad. Opening a tab for it and
         # then blocking its contents is the worst of both: you get a broken tab AND lose
         # your place. Drop it before the tab exists, which is what a real blocker does
-        if (blocker := self.window.blocker) and blocker.hosts:
-            from modules.blocklist import blocked
-            if blocked(request.requestedUrl().host(), blocker.hosts):
-                return
+        if (blocker := self.window.blocker) and blocker.blocks(request.requestedUrl().host()):
+            return
         # Always background, never focus. Ad-gated download hosts fire a popup on the
         # same click that starts the download, so focusing it steals the page out from
         # under you. Ctrl/middle-clicked links were already background anyway
@@ -261,29 +259,23 @@ class BrowserWindow(QtWidgets.QWidget):
         self.controls.setLayout(QtWidgets.QVBoxLayout(self.controls))
         self.controls.layout().setContentsMargins(0, 0, 0, 0)
         self.controls.layout().setSpacing(0)
-        self.controls.buttons = QtWidgets.QWidget(self.controls)
-        self.controls.buttons.setLayout(QtWidgets.QHBoxLayout(self.controls.buttons))
-        self.controls.buttons.layout().setContentsMargins(0, 0, 0, 0)
-        self.controls.buttons.layout().setSpacing(0)
-        self.controls.buttons.back = QtWidgets.QPushButton("󰁍", self.controls.buttons)
-        self.controls.buttons.forward = QtWidgets.QPushButton("󰁔", self.controls.buttons)
-        self.controls.buttons.reload = QtWidgets.QPushButton("󰑐", self.controls.buttons)
-        self.controls.buttons.url = QtWidgets.QLineEdit(self.controls.buttons)
-        self.controls.buttons.extension = QtWidgets.QPushButton(icon, "", self.controls.buttons)
-        for widget in (
-            self.controls.buttons.back,
-            self.controls.buttons.forward,
-            self.controls.buttons.reload,
-            self.controls.buttons.url,
-            self.controls.buttons.extension,
-        ):
-            self.controls.buttons.layout().addWidget(widget)
+        self.controls.buttons = b = QtWidgets.QWidget(self.controls)
+        b.setLayout(QtWidgets.QHBoxLayout(b))
+        b.layout().setContentsMargins(0, 0, 0, 0)
+        b.layout().setSpacing(0)
+        b.back = QtWidgets.QPushButton("󰁍", b)
+        b.forward = QtWidgets.QPushButton("󰁔", b)
+        b.reload = QtWidgets.QPushButton("󰑐", b)
+        b.url = QtWidgets.QLineEdit(b)
+        b.extension = QtWidgets.QPushButton(icon, "", b)
+        for widget in (b.back, b.forward, b.reload, b.url, b.extension):
+            b.layout().addWidget(widget)
         if buttons:
-            self.controls.layout().addWidget(self.controls.buttons)
+            self.controls.layout().addWidget(b)
         else:
             # Parented but never laid out, so showChildren() would still show it
             # and leave an invisible url bar reachable with Tab
-            self.controls.buttons.setVisible(False)
+            b.setVisible(False)
         self.controls.progress = QtWidgets.QProgressBar(self.controls)
         self.controls.progress.setTextVisible(False)
         self.controls.progress.setFixedHeight(2)
@@ -291,20 +283,18 @@ class BrowserWindow(QtWidgets.QWidget):
         self.controls.layout().addWidget(self.controls.progress)
 
         # Nav controls act on whichever tab is current
-        self.controls.buttons.back.clicked.connect(lambda _=None: self.current_tab.view.back())
-        self.controls.buttons.forward.clicked.connect(lambda _=None: self.current_tab.view.forward())
-        self.controls.buttons.reload.clicked.connect(lambda _=None: self.current_tab.reload())
-        self.controls.buttons.url.returnPressed.connect(
-            lambda: self.current_tab.load(self.controls.buttons.url.text())
-        )
+        b.back.clicked.connect(lambda _=None: self.current_tab.view.back())
+        b.forward.clicked.connect(lambda _=None: self.current_tab.view.forward())
+        b.reload.clicked.connect(lambda _=None: self.current_tab.reload())
+        b.url.returnPressed.connect(lambda: self.current_tab.load(b.url.text()))
         if extension:
-            self.controls.buttons.extension.clicked.connect(
+            b.extension.clicked.connect(
                 lambda _=None: self.current_tab.page.runJavaScript(
                     f"addGame({self.current_tab.view.url().url()!r});"
                 )
             )
         else:
-            self.controls.buttons.extension.setVisible(False)
+            b.extension.setVisible(False)
 
         self.tabs = QtWidgets.QTabWidget(self)
         self.tabs.setDocumentMode(True)
@@ -385,7 +375,7 @@ class BrowserWindow(QtWidgets.QWidget):
         if len(self.tab_list) > 1:
             self.tabs.setCurrentIndex((self.tabs.currentIndex() + 1) % len(self.tab_list))
 
-    def tab_changed(self, _: int = -1):
+    def tab_changed(self, _: int):
         # The whole chrome follows whichever tab is now current
         tab = self.current_tab
         self.sync_controls()
@@ -456,29 +446,17 @@ def make_blocker(path: str):
     main_frame = QtWebEngineCore.QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame
 
     class Blocker(QtWebEngineCore.QWebEngineUrlRequestInterceptor):
-        hosts = None  # exposed so popups can be dropped before a tab is ever built
+        def blocks(self, host: str):
+            # Also asked before a popup gets a tab, not just per request
+            return blocked(host, hosts)
 
         def interceptRequest(self, info):
             # Never block the top-level document: navigating *to* a blocked
             # host must fail normally (DNS/404/etc), not with a silent blank block
-            if info.resourceType() is not main_frame and blocked(info.requestUrl().host(), hosts):
+            if info.resourceType() is not main_frame and self.blocks(info.requestUrl().host()):
                 info.block(True)
 
-    blocker = Blocker()
-    blocker.hosts = hosts
-    return blocker
-
-
-def install_blocker(window: BrowserWindow, blocklist_file: str | None, tabs: bool):
-    # tabs is true only for the real shared browser (open()); cookies(),
-    # css_redirect() and xpath_redirect() all pass tabs=False unconditionally,
-    # and blocking a request there could stall the very redirect they are
-    # waiting on, hanging forever with no error
-    if not (blocklist_file and tabs):
-        return
-    if blocker := make_blocker(blocklist_file):
-        window.blocker = blocker  # PyQt does not own it; a GC'd interceptor stops blocking
-        window.profile.setUrlRequestInterceptor(blocker)
+    return Blocker()
 
 
 def create(
@@ -538,7 +516,12 @@ def create(
         proxy_auth=proxy_auth,
         title=title,
     )
-    install_blocker(app.window, blocklist_file, tabs)
+    # Gated on tabs, never buttons: cookies(), css_redirect() and xpath_redirect() all
+    # pass tabs=False unconditionally, but the resolvers keep the chrome on their default
+    # path, and blocking a request there could stall the very redirect they wait on
+    if blocklist_file and tabs and (blocker := make_blocker(blocklist_file)):
+        app.window.blocker = blocker  # PyQt does not own it; a GC'd interceptor stops blocking
+        app.window.profile.setUrlRequestInterceptor(blocker)
     if size:
         app.window.resize(*size)
     if pos:
