@@ -213,7 +213,7 @@ async def connect():
             "default_tab_is_new":          f'INTEGER DEFAULT {int(False)}',
             "display_mode":                f'INTEGER DEFAULT {DisplayMode.list}',
             "display_tab":                 f'INTEGER DEFAULT NULL',
-            "download_manager_arguments":  f'TEXT    DEFAULT "/d {{url}} /n"',
+            "download_manager_arguments":  f'TEXT    DEFAULT "/d {{url}}"',
             "download_manager_executable": f'TEXT    DEFAULT ""',
             "downloads_dir":               f'TEXT    DEFAULT "{{}}"',
             "ext_background_add":          f'INTEGER DEFAULT {int(True)}',

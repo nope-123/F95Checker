@@ -4461,7 +4461,8 @@ class MainGUI():
                 "Download manager:",
                 "Hand downloads from the integrated browser to an external download manager instead of saving them "
                 "directly. Leave the executable empty to save downloads normally. Use {url} in the arguments where the "
-                "download link should go. For IDM on Windows, browse to IDMan.exe and keep the default arguments."
+                "download link should go. For IDM on Windows, browse to IDMan.exe and keep the default arguments; "
+                "adding /n after them makes IDM start downloading immediately instead of asking for a name and folder."
             )
             if imgui.button("Configure", width=right_width):
                 draw_exe_and_args(
