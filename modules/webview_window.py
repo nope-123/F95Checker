@@ -233,6 +233,7 @@ class BrowserWindow(QtWidgets.QWidget):
         self.rpcproxy = rpcproxy
         self.proxy_auth = proxy_auth
         self.title_fixed = bool(title)
+        self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
 
@@ -539,7 +540,10 @@ def create(
     def download_requested(download: QtWebEngineCore.QWebEngineDownloadRequest):
         # download_manager crossed the process boundary as JSON, so this is a
         # list, not a tuple, but unpacking doesn't care
-        executable, arguments = download_manager
+        # Stripped because a path pasted into the settings field very easily carries a
+        # leading or trailing space, and CreateProcess then fails with a bare
+        # FileNotFoundError that used to look exactly like "no manager configured"
+        executable, arguments = (part.strip() for part in download_manager)
         if executable:
             url = download.url().url()
             # No shell, and {url} is substituted AFTER shlex.split, so nothing
@@ -559,7 +563,18 @@ def create(
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-            except (OSError, ValueError):
+            except (OSError, ValueError) as exc:
+                # Falling back silently makes a misconfigured manager indistinguishable
+                # from no manager at all, so say it once per window, then still hand the
+                # user their save dialog rather than losing the download
+                if not app.window.download_manager_warned:
+                    app.window.download_manager_warned = True
+                    QtWidgets.QMessageBox.warning(
+                        app.window, "Download manager failed",
+                        f"Could not launch your download manager, so this download falls "
+                        f"back to the save dialog.\n\n{type(exc).__name__}: {exc}\n\n"
+                        f"Executable: {executable!r}\nArguments: {arguments!r}",
+                    )
                 save_dialog(download)  # bad path or bad template: user still gets their file
             else:
                 download.cancel()
