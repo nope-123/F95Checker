@@ -207,7 +207,7 @@ class WebTab:
 
 class BrowserWindow(QtWidgets.QWidget):
     # Qt only recognizes signals declared as class attributes
-    url_received = QtCore.pyqtSignal(str)
+    url_received = QtCore.pyqtSignal(str, dict)
 
     def __init__(
         self, *,
@@ -408,7 +408,7 @@ def watch_stdin(window: BrowserWindow):
             except json.JSONDecodeError:
                 continue
             if url := message.get("open"):
-                window.url_received.emit(url)
+                window.url_received.emit(url, message.get("cookies") or {})
     threading.Thread(target=reader, daemon=True).start()
 
 

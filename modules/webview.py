@@ -57,7 +57,7 @@ async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=Fa
     async with (browser_lock if reuse else contextlib.nullcontext()):
         if reuse and globals.browser_daemon:
             try:
-                globals.browser_daemon.put({"open": args[1]})
+                globals.browser_daemon.put({"open": args[1], "cookies": kwargs.get("cookies")})
                 return None
             except DaemonPipe.DaemonPipeExit:
                 globals.browser_daemon = None
@@ -125,14 +125,22 @@ def create_kwargs():
 
 def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):
     app = create(**kwargs)
-    url = QtCore.QUrl(url)
-    if cookies and cookies_domain:
-        cookies_domain = QtCore.QUrl("https://" + cookies_domain)
+    # The store belongs to the profile, not to a tab, and so does the domain the
+    # spawn was given: later opens must land in the same place as the first one
+    store = app.window.profile.cookieStore()
+    domain = QtCore.QUrl("https://" + cookies_domain) if cookies_domain else None
+    def set_cookies(cookies: dict[str, str]):
+        if not (cookies and domain):
+            return
         for key, value in cookies.items():
-            app.window.webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
-    app.window.webview.setUrl(url)
-    # Later opens arrive on stdin instead of spawning another browser
-    def open_tab(url: str):
+            store.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), domain)
+    set_cookies(cookies)
+    app.window.webview.setUrl(QtCore.QUrl(url))
+    # Later opens arrive on stdin instead of spawning another browser. They carry
+    # their own cookies: this window outlives a sidebar login, and reapplying them
+    # is exactly what a freshly spawned process used to do
+    def open_tab(url: str, cookies: dict[str, str]):
+        set_cookies(cookies)
         app.window.new_tab(url)
         app.window.raise_()
         app.window.activateWindow()
