@@ -543,7 +543,12 @@ def create(
         # leading or trailing space, and CreateProcess then fails with a bare
         # FileNotFoundError that used to look exactly like "no manager configured"
         executable, arguments = (part.strip() for part in download_manager)
-        if executable:
+        # An external manager can only fetch a real URL off the network. A blob: or
+        # data: url exists solely inside this page, so handing one over downloads
+        # nothing at all -- which is how MEGA and anything else that decrypts or
+        # builds its file in javascript hands the browser its result
+        handoff = executable and download.url().scheme() in ("http", "https")
+        if handoff:
             url = download.url().url()
             # No shell, and {url} is substituted AFTER shlex.split, so nothing
             # in this web-controlled URL can be parsed as a quote or separator.
