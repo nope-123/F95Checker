@@ -88,6 +88,7 @@ def create_kwargs():
         globals,
         icons,
     )
+    from modules.blocklist import blocklist_path
 
     if globals.settings.proxy_type is ProxyType.Disabled:
         proxy_config = None
@@ -120,6 +121,10 @@ def create_kwargs():
         style_text_dim=colors.rgba_0_1_to_hex(globals.settings.style_text_dim)[:-2],
         style_corner_radius=f"{globals.settings.style_corner_radius}px",
         proxy_config=proxy_config,
+        # A str, never a Path: this dict crosses the process boundary as JSON
+        blocklist_file=(
+            str(blocklist_path()) if globals.settings.browser_adblock else None
+        ),
     )
 
 

@@ -412,6 +412,42 @@ def watch_stdin(window: BrowserWindow):
     threading.Thread(target=reader, daemon=True).start()
 
 
+def make_blocker(path: str):
+    # Reading and parsing the ~4MB / ~220k-entry list happens once here, at
+    # window construction, so interceptRequest below stays a single set lookup
+    # per request
+    from PyQt6 import QtWebEngineCore
+    from modules.blocklist import blocked, parse_blocklist
+    try:
+        hosts = parse_blocklist(pathlib.Path(path).read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return None  # not downloaded yet, or unreadable: degrade to no blocking
+    if not hosts:
+        return None
+    main_frame = QtWebEngineCore.QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame
+
+    class Blocker(QtWebEngineCore.QWebEngineUrlRequestInterceptor):
+        def interceptRequest(self, info):
+            # Never block the top-level document: navigating *to* a blocked
+            # host must fail normally (DNS/404/etc), not with a silent blank block
+            if info.resourceType() is not main_frame and blocked(info.requestUrl().host(), hosts):
+                info.block(True)
+
+    return Blocker()
+
+
+def install_blocker(window: BrowserWindow, blocklist_file: str | None, tabs: bool):
+    # tabs is true only for the real shared browser (open()); cookies(),
+    # css_redirect() and xpath_redirect() all pass tabs=False unconditionally,
+    # and blocking a request there could stall the very redirect they are
+    # waiting on, hanging forever with no error
+    if not (blocklist_file and tabs):
+        return
+    if blocker := make_blocker(blocklist_file):
+        window.blocker = blocker  # PyQt does not own it; a GC'd interceptor stops blocking
+        window.profile.setUrlRequestInterceptor(blocker)
+
+
 def create(
     *,
     title: str = None,
@@ -431,6 +467,7 @@ def create(
     style_text_dim: str,
     style_corner_radius: str,
     proxy_config: dict | None,
+    blocklist_file: str | None,
 ):
     config_qt_flags(debug, software)
     proxy_auth = apply_proxy(proxy_config)
@@ -467,6 +504,7 @@ def create(
         proxy_auth=proxy_auth,
         title=title,
     )
+    install_blocker(app.window, blocklist_file, tabs)
     if size:
         app.window.resize(*size)
     if pos:
