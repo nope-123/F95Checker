@@ -214,19 +214,15 @@ class WebTab:
         # is showing is still the right question there, because a redirect has not
         # committed anything yet. Form posts, back/forward and reload stay exempt: those
         # are a login or your own history, not a page taking the tab
-        if request.navigationType() not in (
-            NavigationType.LinkClickedNavigation,
-            NavigationType.RedirectNavigation,
-            NavigationType.OtherNavigation,
-        ):
-            return
-        # Except off f95zone, where a redirect is a masked link resolving to the host it
-        # was always pointing at -- the one site this browser exists for, and the one
-        # place a redirect off site is the thing you asked for rather than a hijack.
-        # Blocked hosts were already turned away above, so this exempts a destination,
-        # never a known ad
-        if request.navigationType() is NavigationType.RedirectNavigation and \
-                "f95zone.to" in self.view.url().host():
+        if request.navigationType() is NavigationType.RedirectNavigation:
+            # Except off f95zone, where a redirect is a masked link resolving to the
+            # host it was always pointing at -- the one site this browser exists for,
+            # and the one place a redirect off site is the thing you asked for rather
+            # than a hijack. Blocked hosts were turned away above, so this exempts a
+            # destination, never a known ad
+            if "f95zone.to" in self.view.url().host():
+                return
+        elif request.navigationType() not in (NavigationType.LinkClickedNavigation, NavigationType.OtherNavigation):
             return
         # Nothing to lose your place in until this tab has a page of its own
         if self.view.history.count() and not same_site(url.host(), self.view.url().host()):

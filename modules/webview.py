@@ -161,8 +161,7 @@ def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, 
     def open_tab(url: str, cookies: dict[str, str]):
         set_cookies(cookies)
         app.window.new_tab(url)
-        app.window.raise_()
-        app.window.activateWindow()
+        show_front(app.window)
     app.window.url_received.connect(open_tab)
     watch_stdin(app.window)
     show_front(app.window)

@@ -65,6 +65,19 @@ def browser():
     return app, window
 
 
+def tabs_after(app, window, ms: int):
+    """Run the browser for ms and report where every tab ended up, which is the whole
+    question these cases ask: did the page keep its place, and did the navigation still
+    happen somewhere."""
+    urls = []
+    def finish():
+        urls.extend(tab.view.url().url() for tab in window.tab_list)
+        app.quit()
+    QtCore.QTimer.singleShot(ms, finish)
+    app.exec()
+    return urls
+
+
 def run(target: str):
     """Load a page that hijacks a click into a top level navigation, as an ad gated
     download host does, and report where the tabs ended up."""
@@ -78,18 +91,12 @@ def run(target: str):
     window.profile.setUrlRequestInterceptor(window.blocker)
     tab = window.new_tab()
 
-    urls = []
-    def finish():
-        urls.extend(t.view.url().url() for t in window.tab_list)
-        app.quit()
     tab.page.setHtml(
         "<html><body>file<script>setTimeout(function(){"
         f"location.href={target!r};" "}, 100)</script></body></html>",
         QtCore.QUrl(PAGE),
     )
-    QtCore.QTimer.singleShot(3000, finish)
-    app.exec()
-    return urls
+    return tabs_after(app, window, 3000)
 
 
 def test_blocked_host_cannot_take_the_tab():
@@ -125,13 +132,7 @@ def test_redirect_cannot_take_the_tab():
     QtCore.QTimer.singleShot(2000, lambda: tab.page.runJavaScript(
         f"location.href='http://localhost:{port}/go';"))
 
-    urls = []
-    def finish():
-        urls.extend(t.view.url().url() for t in window.tab_list)
-        app.quit()
-    QtCore.QTimer.singleShot(6000, finish)
-    app.exec()
-
+    urls = tabs_after(app, window, 6000)
     assert urls == [f"http://localhost:{port}/page", f"http://127.0.0.1:{port}/ad"], \
         f"a redirect took the tab off site: {urls}"
 
@@ -154,13 +155,7 @@ def test_masked_f95zone_link_stays_in_the_tab():
     QtCore.QTimer.singleShot(2000, lambda: tab.page.runJavaScript(
         f"location.href='http://f95zone.to:{port}/masked/1';"))
 
-    urls = []
-    def finish():
-        urls.extend(t.view.url().url() for t in window.tab_list)
-        app.quit()
-    QtCore.QTimer.singleShot(6000, finish)
-    app.exec()
-
+    urls = tabs_after(app, window, 6000)
     assert urls == [f"http://127.0.0.1:{port}/file"], \
         f"a masked link was moved out of the tab it was clicked in: {urls}"
 
