@@ -208,9 +208,17 @@ class WebTab:
         # tab you are reading: a click that leaves this site opens a background tab
         # instead, exactly like the popups do. Costs a legit cross-site link one click
         # on the new tab, and costs an ad the page it was trying to steal.
-        # Only what a page itself started -- a server redirect is a login, a masked
-        # link or a CDN hop, and that chain has to stay in the tab that began it
-        if request.navigationType() not in (NavigationType.LinkClickedNavigation, NavigationType.OtherNavigation):
+        # Redirects count, and they are how the ad actually arrives: the download button
+        # points at a tracker url on the host you are already on, so the click itself is
+        # same site and only the 302 out of it leaves. Comparing against the page the tab
+        # is showing is still the right question there, because a redirect has not
+        # committed anything yet. Form posts, back/forward and reload stay exempt: those
+        # are a login or your own history, not a page taking the tab
+        if request.navigationType() not in (
+            NavigationType.LinkClickedNavigation,
+            NavigationType.RedirectNavigation,
+            NavigationType.OtherNavigation,
+        ):
             return
         # Nothing to lose your place in until this tab has a page of its own
         if self.view.history.count() and not same_site(url.host(), self.view.url().host()):

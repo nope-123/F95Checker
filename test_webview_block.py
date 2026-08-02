@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 # Run: python test_webview_block.py
 # Needs PyQt6 + QtWebEngine (so unlike test_blocklist.py it is not dependency free),
-# runs offscreen and touches no network: the page is set with setHtml() and the
-# navigations it attempts are all to .invalid hosts that never resolve.
+# runs offscreen and touches no network: pages are either set with setHtml() and
+# navigate to .invalid hosts that never resolve, or served from 127.0.0.1.
+import http.server
 import os
 import pathlib
 import sys
 import tempfile
+import threading
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -30,6 +32,39 @@ CROSS_SITE = "https://elsewhere.invalid/d?zid=1"
 SAME_SITE = "https://cdn.opener.invalid/file.zip"
 
 
+def serve(routes: dict):
+    """Serve a path -> (status, headers, body) table on 127.0.0.1 and return the port.
+    Header values may contain {port}. Threaded, and never shut down: a single threaded
+    server sits blocked in a connection the browser keeps alive, and shutdown() then
+    waits on it forever."""
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            status, headers, body = routes.get(self.path, (404, {}, b""))
+            self.send_response(status)
+            for header, value in headers.items():
+                self.send_header(header, value.format(port=self.server.server_port))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *_):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server.server_port
+
+
+def browser():
+    app = QtWidgets.QApplication(sys.argv)
+    window = BrowserWindow(
+        buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
+        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
+        proxy_auth=None, title="test",
+    )
+    return app, window
+
+
 def run(target: str):
     """Load a page that hijacks a click into a top level navigation, as an ad gated
     download host does, and report where the tabs ended up."""
@@ -37,12 +72,7 @@ def run(target: str):
     # make_blocker degrades to None on an empty list, so the file needs one entry
     listfile.write_text("# test list\nblocked.invalid\n")
 
-    app = QtWidgets.QApplication(sys.argv)
-    window = BrowserWindow(
-        buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
-        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
-        proxy_auth=None, title="test",
-    )
+    app, window = browser()
     window.blocker = make_blocker(str(listfile))
     assert window.blocker is not None, "blocker failed to build"
     window.profile.setUrlRequestInterceptor(window.blocker)
@@ -78,44 +108,45 @@ def test_same_site_navigates_in_place():
     assert run(SAME_SITE) == [SAME_SITE], "same site navigation was moved out of its tab"
 
 
+def test_redirect_cannot_take_the_tab():
+    """How the ad actually reaches you on a download host: the button points at a
+    tracker url on the host you are already on, so the click itself is same site and
+    only the 302 out of it leaves. The click has to be allowed and the redirect
+    caught -- and the redirect is the hop no blocklist knows the domain of yet."""
+    port = serve({
+        "/page": (200, {"Content-Type": "text/html"}, b"<html><body>the page you were reading</body></html>"),
+        # 127.0.0.1 rather than localhost: same server, different site
+        "/go": (302, {"Location": "http://127.0.0.1:{port}/ad"}, b""),
+        "/ad": (200, {"Content-Type": "text/html"}, b"<html><body>ad</body></html>"),
+    })
+    app, window = browser()
+    tab = window.new_tab(f"http://localhost:{port}/page")
+    # The click on the download button, once the page it is on has loaded
+    QtCore.QTimer.singleShot(2000, lambda: tab.page.runJavaScript(
+        f"location.href='http://localhost:{port}/go';"))
+
+    urls = []
+    def finish():
+        urls.extend(t.view.url().url() for t in window.tab_list)
+        app.quit()
+    QtCore.QTimer.singleShot(6000, finish)
+    app.exec()
+
+    assert urls == [f"http://localhost:{port}/page", f"http://127.0.0.1:{port}/ad"], \
+        f"a redirect took the tab off site: {urls}"
+
+
 def test_download_tab_closes_itself():
     """The rest of the flow a download host puts you through: the file is on another
     host, so the link landed in its own tab (the case above) -- and that tab must not be
     left sitting there blank once the file has been handed to the download manager."""
-    import http.server
-    import threading
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            if self.path == "/file.bin":
-                self.send_response(200)
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Disposition", 'attachment; filename="file.bin"')
-                body = b"payload"
-            else:
-                self.send_response(200)
-                self.send_header("Set-Cookie", "sess=onlyforme; Path=/")
-                self.send_header("Content-Type", "text/html")
-                body = b"<html><body>the page you were reading</body></html>"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        def log_message(self, *_):
-            pass
-
-    # Threading, and never shut down: a single threaded server sits blocked in a
-    # connection the browser keeps alive, and shutdown() then waits on it forever
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    port = server.server_port
-
-    app = QtWidgets.QApplication(sys.argv)
-    window = BrowserWindow(
-        buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
-        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
-        proxy_auth=None, title="test",
-    )
+    port = serve({
+        "/": (200, {"Set-Cookie": "sess=onlyforme; Path=/", "Content-Type": "text/html"},
+              b"<html><body>the page you were reading</body></html>"),
+        "/file.bin": (200, {"Content-Type": "application/octet-stream",
+                            "Content-Disposition": 'attachment; filename="file.bin"'}, b"payload"),
+    })
+    app, window = browser()
     seen = {}
     def downloaded(download):
         seen["tabs_at_download"] = len(window.tab_list)
@@ -157,6 +188,7 @@ if __name__ == "__main__":
         "blocked": test_blocked_host_cannot_take_the_tab,
         "cross": test_cross_site_gets_a_background_tab,
         "same": test_same_site_navigates_in_place,
+        "redirect": test_redirect_cannot_take_the_tab,
         "download": test_download_tab_closes_itself,
     }
     # One QApplication per process, so each case runs as its own subprocess
