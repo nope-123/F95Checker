@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Stdlib-only self-check, needs no installed dependencies.
 # Run: python test_blocklist.py
-from modules.blocklist import blocked, parse_blocklist
+from modules.blocklist import blocked, parse_blocklist, same_site
 
 LIST = """\
 # Title: HaGeZi's Pro DNS Blocklist
@@ -51,7 +51,21 @@ def test_blocked():
     assert not blocked("example.com", {"com"})
 
 
+def test_same_site():
+    # the page itself moving around: same host, or its own subdomains either way
+    assert same_site("f95zone.to", "f95zone.to")
+    assert same_site("attachments.f95zone.to", "f95zone.to")
+    assert same_site("f95zone.to", "www.f95zone.to")
+    assert same_site("F95Zone.to", "WWW.f95zone.TO")
+    # a click that leaves the site, which is what an ad redirect looks like
+    assert not same_site("rovno.xyz", "vikingf1le.us.to")
+    assert not same_site("mega.nz", "mega.io")
+    # a suffix that is not a label boundary is a different site
+    assert not same_site("notf95zone.to", "f95zone.to")
+
+
 if __name__ == "__main__":
     test_parse_blocklist()
     test_blocked()
+    test_same_site()
     print("ok")

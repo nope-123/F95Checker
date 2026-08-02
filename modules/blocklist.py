@@ -24,6 +24,16 @@ def blocked(host: str, hosts: set[str]):
     return False
 
 
+def same_site(a: str, b: str):
+    # Suffix match rather than a public suffix list: www/cdn/attachments subdomains
+    # have to count as the same site, and a real PSL is a second 200KB list to ship
+    # and refresh for a question only asked about the page you are already on.
+    # ponytail: worst case an ad hosted under the same suffix as the page (both on a
+    # dyndns domain like us.to) reads as same-site; add a PSL if that shows up
+    a, b = a.lower(), b.lower()
+    return a == b or a.endswith("." + b) or b.endswith("." + a)
+
+
 def blocklist_path():
     from modules import globals
     return globals.data_path / "blocklist.txt"

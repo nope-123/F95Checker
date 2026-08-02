@@ -122,6 +122,7 @@ class WebTab:
         self.view.urlChanged.connect(self.url_changed)
         self.view.titleChanged.connect(self.title_changed)
         self.page.newWindowRequested.connect(self.new_window_requested)
+        self.page.navigationRequested.connect(self.navigation_requested)
         if window.proxy_auth:
             self.page.proxyAuthenticationRequired.connect(self.proxy_authenticate)
         if extension:
@@ -149,6 +150,47 @@ class WebTab:
         tab = self.window.new_tab(background=True)
         # openIn() preserves the opener relationship, setUrl() does not
         request.openIn(tab.page)
+
+    def navigation_requested(self, request):
+        from PyQt6 import QtWebEngineCore
+        from modules.blocklist import same_site
+        NavigationType = QtWebEngineCore.QWebEngineNavigationRequest.NavigationType
+        # Gated on tabs for the same reason new_window_requested is: the resolver and
+        # login windows are one view watching for the very navigation this would move
+        if not request.isMainFrame() or not self.window.tabs_enabled:
+            return
+        # Typed stays exempt throughout: the address bar is the user's own instruction
+        # and their way out, so it must never silently do nothing
+        if request.navigationType() is NavigationType.TypedNavigation:
+            return
+        url = request.url()
+        # The popup check and interceptRequest both miss the ad. An ad chain enters
+        # through a domain no list knows and only lands on a listed host a redirect or
+        # two later -- by which point it is a top level navigation, and interceptRequest
+        # lets every one of those through by design. This is the one place that sees the
+        # whole chain, hop by hop. Rejecting also beats blocking the request: the tab
+        # stays on the page it was showing rather than becoming an error page
+        if (blocker := self.window.blocker) and blocker.blocks(url.host()):
+            request.reject()
+            # A popup tab whose first navigation was the ad has no page to fall back
+            # on, so it would sit there empty. It is never the last tab: the opener is
+            # still open, and closing that one would take the whole window with it
+            if not self.view.history.count() and len(self.window.tab_list) > 1:
+                self.window.close_tab(self.window.tab_list.index(self))
+            return
+        # Ad hosts are registered faster than any blocklist adds them, so the list can
+        # only ever be half the answer. The other half is that no page gets to take the
+        # tab you are reading: a click that leaves this site opens a background tab
+        # instead, exactly like the popups do. Costs a legit cross-site link one click
+        # on the new tab, and costs an ad the page it was trying to steal.
+        # Only what a page itself started -- a server redirect is a login, a masked
+        # link or a CDN hop, and that chain has to stay in the tab that began it
+        if request.navigationType() not in (NavigationType.LinkClickedNavigation, NavigationType.OtherNavigation):
+            return
+        # Nothing to lose your place in until this tab has a page of its own
+        if self.view.history.count() and not same_site(url.host(), self.view.url().host()):
+            request.reject()
+            self.window.new_tab(url.url(), background=True)
 
     def proxy_authenticate(self, _: QtCore.QUrl, authenticator: QtNetwork.QAuthenticator, __: str):
         username, password = self.window.proxy_auth
@@ -256,7 +298,6 @@ class BrowserWindow(QtWidgets.QWidget):
         self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
-
         self.setWindowIcon(icon)
         if title:
             self.setWindowTitle(title)
@@ -378,6 +419,20 @@ class BrowserWindow(QtWidgets.QWidget):
         # Deferred because this runs inside QTabBar's mouse handler
         tab.view.deleteLater()
         self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
+
+    def close_download_tab(self, download):
+        # A download link that points off site now gets a tab of its own (see
+        # navigation_requested, and popups have always worked this way), and a tab that
+        # only ever produced a download has nothing left to show. Call this at the end
+        # of the download handler, never the start: closing deletes the page the
+        # download belongs to, and the save dialog spins the event loop long enough
+        # for the deferred delete to actually run
+        page = download.page()
+        for index, tab in enumerate(self.tab_list):
+            if tab.page is page:
+                if not tab.view.history.count() and len(self.tab_list) > 1:
+                    self.close_tab(index)
+                return
 
     def next_tab(self):
         if len(self.tab_list) > 1:
@@ -590,8 +645,10 @@ def create(
                 save_dialog(download)  # bad path or bad template: user still gets their file
             else:
                 download.cancel()
+            app.window.close_download_tab(download)
             return
         save_dialog(download)
+        app.window.close_download_tab(download)
     app.window.profile.downloadRequested.connect(download_requested)
 
     app.window.setStyleSheet(f"""
