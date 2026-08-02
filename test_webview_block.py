@@ -94,6 +94,7 @@ def test_download_tab_closes_itself():
                 body = b"payload"
             else:
                 self.send_response(200)
+                self.send_header("Set-Cookie", "sess=onlyforme; Path=/")
                 self.send_header("Content-Type", "text/html")
                 body = b"<html><body>the page you were reading</body></html>"
             self.send_header("Content-Length", str(len(body)))
@@ -133,10 +134,15 @@ def test_download_tab_closes_itself():
     def finish():
         seen["tabs"] = len(window.tab_list)
         seen["url"] = tab.view.url().url()
+        # Read long after the cookie store's signal returned, which is the whole point:
+        # keeping the QNetworkCookie Qt hands that signal, instead of its values, is an
+        # access violation here and takes the browser down with it
+        seen["cookies"] = window.cookie_header(QtCore.QUrl(f"http://localhost:{port}/file.bin"))
         app.quit()
     QtCore.QTimer.singleShot(5000, finish)
     app.exec()
 
+    assert seen.get("cookies") == "sess=onlyforme", f"the session did not survive: {seen.get('cookies')!r}"
     assert seen.get("tabs_at_download") == 2, f"the download did not get its own tab: {seen}"
     assert seen["tabs"] == 1, "the tab the download came from was left behind"
     assert seen["url"] == f"http://localhost:{port}/", f"the page lost its place: {seen['url']}"

@@ -86,6 +86,22 @@ def make_rpcproxy():
     return RPCProxy()
 
 
+def cookie_key(cookie: QtNetwork.QNetworkCookie):
+    # What actually makes a cookie unique, so a reissued one replaces the old value
+    return (cookie.domain(), cookie.path(), bytes(cookie.name()))
+
+
+def cookie_data(cookie: QtNetwork.QNetworkCookie):
+    # Read out inside the slot, never kept: the QNetworkCookie the cookie store hands
+    # its signals is a temporary, and touching the wrapper after the slot returns is an
+    # access violation that takes the whole browser down
+    return (
+        cookie.domain(), cookie.path(), cookie.isSecure(),
+        bytes(cookie.name()).decode(errors="replace"),
+        bytes(cookie.value()).decode(errors="replace"),
+    )
+
+
 class WebTab:
 
     def __init__(self, window: "BrowserWindow", extension: str, icon: QtGui.QIcon):
@@ -298,6 +314,15 @@ class BrowserWindow(QtWidgets.QWidget):
         self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
+        # The cookie store can only be watched, never queried, so the only way to know
+        # the browser's cookies for a url is to keep every one it is told about.
+        # loadAllCookies makes it announce what was already on disk too
+        self.cookies = {}
+        store = self.profile.cookieStore()
+        store.cookieAdded.connect(lambda c: self.cookies.__setitem__(cookie_key(c), cookie_data(c)))
+        store.cookieRemoved.connect(lambda c: self.cookies.pop(cookie_key(c), None))
+        store.loadAllCookies()
+
         self.setWindowIcon(icon)
         if title:
             self.setWindowTitle(title)
@@ -419,6 +444,10 @@ class BrowserWindow(QtWidgets.QWidget):
         # Deferred because this runs inside QTabBar's mouse handler
         tab.view.deleteLater()
         self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
+
+    def cookie_header(self, url: QtCore.QUrl):
+        from modules.idm import cookie_header
+        return cookie_header(self.cookies.values(), url.host(), url.path(), url.scheme() == "https")
 
     def close_download_tab(self, download):
         # A download link that points off site now gets a tab of its own (see
@@ -613,6 +642,23 @@ def create(
         handoff = executable and download.url().scheme() in ("http", "https")
         if handoff:
             url = download.url().url()
+            # IDM's command line cannot carry a cookie, so a file the host only serves
+            # to the session that asked for it comes back as the "please log in" page.
+            # Its extension gets around that by handing IDM the request rather than the
+            # url, over a socket IDM listens on locally -- so do that instead, and fall
+            # through to the command line if it is not there to answer
+            if pathlib.Path(executable).name.lower() == "idman.exe":
+                from modules import idm
+                page = download.page().url() if download.page() else QtCore.QUrl()
+                if idm.send_download(
+                    url,
+                    cookies=app.window.cookie_header(download.url()),
+                    referer=page.url(),
+                    user_agent=app.window.profile.httpUserAgent(),
+                ):
+                    download.cancel()
+                    app.window.close_download_tab(download)
+                    return
             # No shell, and {url} is substituted AFTER shlex.split, so nothing
             # in this web-controlled URL can be parsed as a quote or separator.
             # The executable stays out of shlex.split because POSIX rules eat
