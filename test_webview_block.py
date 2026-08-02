@@ -140,13 +140,19 @@ def test_redirect_cannot_take_the_tab():
 
 
 def test_masked_f95zone_link_stays_in_the_tab():
-    """A masked f95zone link resolves by redirect to the host it was always pointing
-    at. That is the one site where a redirect leaving it is the thing you clicked, so
-    it has to stay in the tab you clicked it in."""
+    """A masked f95zone link is a page you land on and click through to the host it
+    stood for (see callbacks.redirect_masked_link, which resolves one by clicking
+    a.host_link). So the hop that leaves f95zone looks exactly like a page sending the
+    tab somewhere else, and it still has to stay in the tab you clicked it in."""
     port = serve({
         "/threads/1": (200, {"Content-Type": "text/html"}, b"<html><body>thread</body></html>"),
-        "/masked/1": (302, {"Location": "http://127.0.0.1:{port}/file"}, b""),
-        "/file": (200, {"Content-Type": "text/html"}, b"<html><body>the host it pointed at</body></html>"),
+        # Same server, different site, and the port comes from the page rather than
+        # serve()'s header substitution
+        "/masked/1": (200, {"Content-Type": "text/html"}, (
+            b"<html><body>click through<script>setTimeout(function(){"
+            b"location.href='http://127.0.0.1:'+location.port+'/file';"
+            b"}, 300)</script></body></html>")),
+        "/file": (200, {"Content-Type": "text/html"}, b"<html><body>the host it stood for</body></html>"),
     })
     # Chromium does the resolving, so the page really is on f95zone.to as far as
     # everything under test can tell. Quoted because Chromium splits its command line
