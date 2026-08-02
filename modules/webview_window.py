@@ -122,7 +122,6 @@ class WebTab:
         self.extension = extension
         self.icon = icon
         self.loading = False
-        # Set on a tab opened for a redirect that left the site: see load_finished
         self.probe = False
         self.view = QtWebEngineWidgets.QWebEngineView(window.profile, window)
         # Attributes stuffed onto the view, kept for the minimal-mode entry points
