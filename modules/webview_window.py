@@ -179,9 +179,8 @@ class WebTab:
         # does not get to sit there. A ctrl or middle click is you asking for the tab by
         # name, and arrives as a background tab request rather than a page's own window
         from PyQt6 import QtWebEngineCore
-        DestinationType = QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType
         tab.probe = (
-            request.destination() is not DestinationType.InNewBackgroundTab
+            request.destination() is not QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType.InNewBackgroundTab
             and "f95zone.to" not in self.view.url().host()
         )
         # openIn() preserves the opener relationship, setUrl() does not
