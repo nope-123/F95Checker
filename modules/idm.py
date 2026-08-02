@@ -50,26 +50,6 @@ def encode(msg_id: int, type_: int, a: int, b: int, args=(), attrs=None):
     return "".join(out)
 
 
-def cookie_header(cookies, host: str, path: str, secure: bool):
-    """Build a Cookie header for one url out of (domain, path, secure, name, value)
-    tuples. Matching is the security part, not polish: handing the whole cookie jar to
-    whatever host a file happens to live on would leak every session the browser holds.
-    """
-    host, path = host.lower(), path or "/"
-    out = []
-    for domain, cookie_path, cookie_secure, name, value in cookies:
-        domain = domain.lower().lstrip(".")
-        if host != domain and not host.endswith("." + domain):
-            continue
-        cookie_path = cookie_path or "/"
-        if path != cookie_path and not path.startswith(cookie_path.rstrip("/") + "/"):
-            continue
-        if cookie_secure and not secure:
-            continue
-        out.append(f"{name}={value}")
-    return "; ".join(out)
-
-
 def _frame(payload: str):
     data = payload.encode("utf-8")
     mask = os.urandom(4)
@@ -102,7 +82,7 @@ def _read_frame(sock, buf: bytearray):
         buf += chunk
 
 
-def send_download(url: str, *, cookies: str = "", referer: str = "", page: str = "",
+def send_download(url: str, *, cookies: str = "", referer: str = "",
                   user_agent: str = "", timeout: float = 5.0):
     """Returns True once IDM has been handed the download, False for any failure at
     all -- IDM not running, protocol changed, anything. The caller falls back."""
@@ -137,20 +117,14 @@ def send_download(url: str, *, cookies: str = "", referer: str = "", page: str =
         if not _read_frame(sock, buf):  # IDM drops downloads sent before it replies
             return False
         sock.sendall(_frame(encode(2, 14, 1, 0, (1,), {
-            6: url, 7: page or referer, 50: referer, 8: 4,
+            6: url, 7: referer, 50: referer, 8: 4,
             51: cookies, 54: user_agent,
         })))
         # IDM reads the socket asynchronously and drops whatever a client left behind
-        # when it disconnects, so closing here silently loses the download -- it took
-        # ~0.13s to act on it in testing. There is no ack to wait for, so stay until it
-        # goes quiet instead: it answers a registration with a burst of its own config
-        deadline = time.monotonic() + 2
-        sock.settimeout(0.5)
-        try:
-            while time.monotonic() < deadline and _read_frame(sock, buf):
-                pass
-        except OSError:
-            pass  # quiet, or hung up: either way it has had the message by now
+        # when it disconnects, so closing right here silently loses the download -- it
+        # took ~0.13s to act on one in testing. There is no ack to wait for, so just
+        # stay long enough for it to have read the message
+        time.sleep(0.5)
         return True
     except (OSError, struct.error):
         return False

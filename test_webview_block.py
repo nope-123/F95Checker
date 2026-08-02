@@ -135,14 +135,18 @@ def test_download_tab_closes_itself():
         seen["tabs"] = len(window.tab_list)
         seen["url"] = tab.view.url().url()
         # Read long after the cookie store's signal returned, which is the whole point:
-        # keeping the QNetworkCookie Qt hands that signal, instead of its values, is an
-        # access violation here and takes the browser down with it
-        seen["cookies"] = window.cookie_header(QtCore.QUrl(f"http://localhost:{port}/file.bin"))
+        # keeping the QNetworkCookie Qt hands that signal, rather than copying it into
+        # the jar, is an access violation here and takes the browser down with it
+        seen["cookies"] = window.cookies.header(QtCore.QUrl(f"http://localhost:{port}/file.bin"))
+        seen["elsewhere"] = window.cookies.header(QtCore.QUrl("https://cdn.example.com/file.zip"))
         app.quit()
     QtCore.QTimer.singleShot(5000, finish)
     app.exec()
 
     assert seen.get("cookies") == "sess=onlyforme", f"the session did not survive: {seen.get('cookies')!r}"
+    # The security half of matching: whatever host a file lives on is not the site the
+    # session belongs to, and must never be handed it
+    assert seen.get("elsewhere") == "", f"the session leaked off site: {seen.get('elsewhere')!r}"
     assert seen.get("tabs_at_download") == 2, f"the download did not get its own tab: {seen}"
     assert seen["tabs"] == 1, "the tab the download came from was left behind"
     assert seen["url"] == f"http://localhost:{port}/", f"the page lost its place: {seen['url']}"
