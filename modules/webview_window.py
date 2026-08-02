@@ -174,6 +174,16 @@ class WebTab:
         # same click that starts the download, so focusing it steals the page out from
         # under you. Ctrl/middle-clicked links were already background anyway
         tab = self.window.new_tab(background=True)
+        # Same deal as a redirect that leaves the site: a tab you never asked for earns
+        # its place by handing over a file, and an ad popup that only renders a page
+        # does not get to sit there. A ctrl or middle click is you asking for the tab by
+        # name, and arrives as a background tab request rather than a page's own window
+        from PyQt6 import QtWebEngineCore
+        DestinationType = QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType
+        tab.probe = (
+            request.destination() is not DestinationType.InNewBackgroundTab
+            and "f95zone.to" not in self.view.url().host()
+        )
         # openIn() preserves the opener relationship, setUrl() does not
         request.openIn(tab.page)
 

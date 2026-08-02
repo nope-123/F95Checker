@@ -168,6 +168,34 @@ def test_masked_f95zone_link_stays_in_the_tab():
         f"a masked link was moved out of the tab it was clicked in: {urls}"
 
 
+def test_popup_ad_does_not_keep_its_tab():
+    """An ad gated download host fires a popup on the same click that starts the
+    download. One that hands over a file keeps its tab until the download handler
+    closes it; one that only renders an ad does not get to sit there."""
+    port = serve({
+        "/page": (200, {"Content-Type": "text/html"}, (
+            b"<html><body>page<script>setTimeout(function(){"
+            b"window.open('http://127.0.0.1:'+location.port+'/ad');"
+            b"}, 300)</script></body></html>")),
+        "/ad": (200, {"Content-Type": "text/html"}, b"<html><body>ad</body></html>"),
+    })
+    app, window = browser()
+    window.new_tab(f"http://localhost:{port}/page")
+
+    # Counted rather than sampled: the tab is meant to be gone by the end, so without
+    # this the case would pass just as happily if the popup had never opened at all
+    opened = []
+    real_new_tab = window.new_tab
+    def spy(*args, **kwargs):
+        opened.append(tab := real_new_tab(*args, **kwargs))
+        return tab
+    window.new_tab = spy
+
+    urls = tabs_after(app, window, 6000)
+    assert len(opened) == 1, f"the popup never opened, so this proves nothing: {opened}"
+    assert urls == [f"http://localhost:{port}/page"], f"a popup ad kept its tab: {urls}"
+
+
 def test_download_tab_closes_itself():
     """The rest of the flow a download host puts you through: the file is on another
     host, so the link landed in its own tab (the case above) -- and that tab must not be
@@ -222,6 +250,7 @@ if __name__ == "__main__":
         "same": test_same_site_navigates_in_place,
         "redirect": test_redirect_cannot_take_the_tab,
         "masked": test_masked_f95zone_link_stays_in_the_tab,
+        "popup": test_popup_ad_does_not_keep_its_tab,
         "download": test_download_tab_closes_itself,
     }
     # One QApplication per process, so each case runs as its own subprocess
