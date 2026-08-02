@@ -220,6 +220,14 @@ class WebTab:
             NavigationType.OtherNavigation,
         ):
             return
+        # Except off f95zone, where a redirect is a masked link resolving to the host it
+        # was always pointing at -- the one site this browser exists for, and the one
+        # place a redirect off site is the thing you asked for rather than a hijack.
+        # Blocked hosts were already turned away above, so this exempts a destination,
+        # never a known ad
+        if request.navigationType() is NavigationType.RedirectNavigation and \
+                "f95zone.to" in self.view.url().host():
+            return
         # Nothing to lose your place in until this tab has a page of its own
         if self.view.history.count() and not same_site(url.host(), self.view.url().host()):
             request.reject()

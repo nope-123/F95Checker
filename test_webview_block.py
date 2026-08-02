@@ -136,6 +136,35 @@ def test_redirect_cannot_take_the_tab():
         f"a redirect took the tab off site: {urls}"
 
 
+def test_masked_f95zone_link_stays_in_the_tab():
+    """A masked f95zone link resolves by redirect to the host it was always pointing
+    at. That is the one site where a redirect leaving it is the thing you clicked, so
+    it has to stay in the tab you clicked it in."""
+    port = serve({
+        "/threads/1": (200, {"Content-Type": "text/html"}, b"<html><body>thread</body></html>"),
+        "/masked/1": (302, {"Location": "http://127.0.0.1:{port}/file"}, b""),
+        "/file": (200, {"Content-Type": "text/html"}, b"<html><body>the host it pointed at</body></html>"),
+    })
+    # Chromium does the resolving, so the page really is on f95zone.to as far as
+    # everything under test can tell. Quoted because Chromium splits its command line
+    # on spaces and the rule has two of them
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] += ' --host-resolver-rules="MAP f95zone.to 127.0.0.1"'
+    app, window = browser()
+    tab = window.new_tab(f"http://f95zone.to:{port}/threads/1")
+    QtCore.QTimer.singleShot(2000, lambda: tab.page.runJavaScript(
+        f"location.href='http://f95zone.to:{port}/masked/1';"))
+
+    urls = []
+    def finish():
+        urls.extend(t.view.url().url() for t in window.tab_list)
+        app.quit()
+    QtCore.QTimer.singleShot(6000, finish)
+    app.exec()
+
+    assert urls == [f"http://127.0.0.1:{port}/file"], \
+        f"a masked link was moved out of the tab it was clicked in: {urls}"
+
+
 def test_download_tab_closes_itself():
     """The rest of the flow a download host puts you through: the file is on another
     host, so the link landed in its own tab (the case above) -- and that tab must not be
@@ -189,6 +218,7 @@ if __name__ == "__main__":
         "cross": test_cross_site_gets_a_background_tab,
         "same": test_same_site_navigates_in_place,
         "redirect": test_redirect_cannot_take_the_tab,
+        "masked": test_masked_f95zone_link_stays_in_the_tab,
         "download": test_download_tab_closes_itself,
     }
     # One QApplication per process, so each case runs as its own subprocess
