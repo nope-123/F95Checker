@@ -132,9 +132,11 @@ def test_redirect_cannot_take_the_tab():
     QtCore.QTimer.singleShot(2000, lambda: tab.page.runJavaScript(
         f"location.href='http://localhost:{port}/go';"))
 
+    # The ad does not get to keep the tab it was given either: a redirect earns one
+    # only by handing over a file, and this one rendered a page
     urls = tabs_after(app, window, 6000)
-    assert urls == [f"http://localhost:{port}/page", f"http://127.0.0.1:{port}/ad"], \
-        f"a redirect took the tab off site: {urls}"
+    assert urls == [f"http://localhost:{port}/page"], \
+        f"a redirect took a tab off site: {urls}"
 
 
 def test_masked_f95zone_link_stays_in_the_tab():

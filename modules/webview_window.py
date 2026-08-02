@@ -122,6 +122,8 @@ class WebTab:
         self.extension = extension
         self.icon = icon
         self.loading = False
+        # Set on a tab opened for a redirect that left the site: see load_finished
+        self.probe = False
         self.view = QtWebEngineWidgets.QWebEngineView(window.profile, window)
         # Attributes stuffed onto the view, kept for the minimal-mode entry points
         self.view.page = self.view.page()
@@ -227,7 +229,11 @@ class WebTab:
         # Nothing to lose your place in until this tab has a page of its own
         if self.view.history.count() and not same_site(url.host(), self.view.url().host()):
             request.reject()
-            self.window.new_tab(url.url(), background=True)
+            tab = self.window.new_tab(url.url(), background=True)
+            # A link you clicked keeps its tab, because you asked for it by name. A
+            # redirect you never saw does not: it gets the tab on approval, and only a
+            # file justifies it
+            tab.probe = request.navigationType() is NavigationType.RedirectNavigation
 
     def proxy_authenticate(self, _: QtCore.QUrl, authenticator: QtNetwork.QAuthenticator, __: str):
         username, password = self.window.proxy_auth
@@ -280,11 +286,18 @@ class WebTab:
         self.window.set_progress(self, max(1, value))
         self.inject()
 
-    def load_finished(self, _=None):
+    def load_finished(self, ok: bool = False):
         self.loading = False
         self.window.sync_controls()
         self.window.set_progress(self, 0)
         self.inject("\nupdateIcons();")
+        # A redirect off site is allowed a tab only long enough to hand over a file,
+        # which is how a download link that hops to a CDN reaches its file at all. This
+        # one rendered a page instead, so it is the ad the redirect was really for and
+        # there is nothing here anyone asked to see. A download leaves loadFinished
+        # false, and closes its own tab from the download handler
+        if ok and self.probe and len(self.window.tab_list) > 1:
+            self.window.close_tab(self.window.tab_list.index(self))
 
     def url_changed(self, url: QtCore.QUrl):
         if self.is_current:
