@@ -23,6 +23,16 @@ from modules.webview_window import (
 browser_lock = asyncio.Lock()
 
 
+def show_front(window):
+    # Brought to the front once, rather than pinned above everything: the resolver and
+    # login windows spawn while the main app has focus, so one that opens behind it is
+    # a captcha or a login nobody ever sees -- but staying on top of every other
+    # program until it closes was never the point
+    window.show()
+    window.raise_()
+    window.activateWindow()
+
+
 async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=False, **kwargs):
     import contextlib
     import imgui
@@ -155,7 +165,7 @@ def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, 
         app.window.activateWindow()
     app.window.url_received.connect(open_tab)
     watch_stdin(app.window)
-    app.window.show()
+    show_front(app.window)
     app.exec()
 
 
@@ -173,9 +183,8 @@ def cookies(url: str, *, minimal=True, **kwargs):
         value = cookie.value().data().decode('utf-8')
         app.pipe.put((name, value))
     app.window.webview.cookieStore.cookieAdded.connect(on_cookie_add)
-    app.window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
     app.window.webview.setUrl(url)
-    app.window.show()
+    show_front(app.window)
     app.exec()
 
 
@@ -216,9 +225,8 @@ def css_redirect(url: str, css_selector: str = None, *, minimal=True, cookies: d
                 }}
             """)
         webview.loadProgress.connect(load_progress)
-    app.window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
     webview.setUrl(url)
-    app.window.show()
+    show_front(app.window)
     app.exec()
 
 
@@ -262,7 +270,6 @@ def xpath_redirect(url: str, xpath_expression: str = None, *, minimal=True, cook
                 }}
             """)
         webview.loadProgress.connect(load_progress)
-    app.window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
     webview.setUrl(url)
-    app.window.show()
+    show_front(app.window)
     app.exec()
