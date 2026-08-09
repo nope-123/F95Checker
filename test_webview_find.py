@@ -283,6 +283,28 @@ def test_a_tab_with_no_search_hides_the_bar():
     assert seen == [False, True], f"bar visibility across tabs went {seen}"
 
 
+def test_navigating_searches_the_new_page():
+    app, window = browser()
+    tab = window.new_tab()
+    seen = []
+    def search():
+        window.find.activate()
+        window.find.query.setText("cat")
+        QtCore.QTimer.singleShot(500, navigate)
+    def navigate():
+        seen.append(window.find.status.text())
+        # Highlights die with the old document, so a stale 1/3 over a page with no cat
+        # in it would be a lie
+        tab.page.setHtml(OTHER, QtCore.QUrl(PAGE))
+        QtCore.QTimer.singleShot(1500, finish)
+    def finish():
+        seen.append(window.find.status.text())
+        app.quit()
+    loaded(app, tab, HTML, search)
+    app.exec()
+    assert seen == ["1/3", "0/0"], f"counter across a navigation went {seen}"
+
+
 if __name__ == "__main__":
     tests = {
         "hidden": test_bar_starts_hidden,
@@ -298,6 +320,7 @@ if __name__ == "__main__":
         "buttons": test_the_buttons_step_too,
         "pertab": test_each_tab_keeps_its_own_search,
         "hides": test_a_tab_with_no_search_hides_the_bar,
+        "navigate": test_navigating_searches_the_new_page,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

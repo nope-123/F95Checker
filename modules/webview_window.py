@@ -308,6 +308,12 @@ class WebTab:
         self.window.sync_controls()
         self.window.set_progress(self, 0)
         self.inject("\nupdateIcons();")
+        if self.find_open and self.find_query:
+            # Highlights die with the old document, so a tab with the bar open searches
+            # the page that replaced it. Background tabs too -- set_status keeps a tab
+            # that is not current from writing the counter. Before the probe check
+            # below, which can delete this tab's view out from under findText
+            self.window.find.run(self)
         # A redirect off site is allowed a tab only long enough to hand over a file,
         # which is how a download link that hops to a CDN reaches its file at all. This
         # one rendered a page instead, so it is the ad the redirect was really for and
