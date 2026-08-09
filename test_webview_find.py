@@ -305,6 +305,37 @@ def test_navigating_searches_the_new_page():
     assert seen == ["1/3", "0/0"], f"counter across a navigation went {seen}"
 
 
+def test_background_tab_navigating_does_not_drive_the_chrome():
+    """The rule set_status enforces: a background tab must never drive the chrome. A
+    tab with find open re-runs its query from load_finished even when it is not the
+    one on screen, so this is the one path that puts a background result callback
+    through set_status and can prove it stays off the visible counter."""
+    app, window = browser()
+    foreground = window.new_tab()
+    background = window.new_tab(background=True)
+    seen = []
+    def search_foreground():
+        window.find.activate()
+        window.find.query.setText("cat")
+        QtCore.QTimer.singleShot(500, navigate_background)
+    def navigate_background():
+        seen.append(window.find.status.text())
+        # Never shown or activated -- its find state is set directly, the way a tab
+        # that opened its bar earlier and was since switched away from would carry it
+        background.find_open = True
+        background.find_query = "dog"
+        background.page.setHtml(OTHER, QtCore.QUrl(PAGE))
+        QtCore.QTimer.singleShot(1500, finish)
+    def finish():
+        seen.append((window.find.status.text(), background.find_status))
+        app.quit()
+    loaded(app, foreground, HTML, search_foreground)
+    app.exec()
+    assert seen == ["1/3", ("1/3", "1/2")], (
+        f"a background tab's own search leaked onto the chrome: {seen}"
+    )
+
+
 if __name__ == "__main__":
     tests = {
         "hidden": test_bar_starts_hidden,
@@ -321,6 +352,7 @@ if __name__ == "__main__":
         "pertab": test_each_tab_keeps_its_own_search,
         "hides": test_a_tab_with_no_search_hides_the_bar,
         "navigate": test_navigating_searches_the_new_page,
+        "background": test_background_tab_navigating_does_not_drive_the_chrome,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

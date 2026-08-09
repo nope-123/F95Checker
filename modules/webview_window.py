@@ -368,6 +368,12 @@ class FindBar(QtWidgets.QWidget):
         self.prev = QtWidgets.QPushButton("\U000f005d", self)  # nf-md-arrow_up
         self.next = QtWidgets.QPushButton("\U000f0045", self)  # nf-md-arrow_down
         self.done = QtWidgets.QPushButton("\U000f0156", self)  # nf-md-close
+        # Fixed, like status above: nothing resizes a widget no layout of a parent
+        # owns, and a single glyph left to its own size hint reports Qt's native
+        # push-button minimum -- about 80px each, which is what made this bar 500px
+        # wide before it had a stylesheet rule to match
+        for button in (self.prev, self.next, self.done):
+            button.setFixedWidth(30)
         for widget in (self.query, self.status, self.prev, self.next, self.done):
             self.layout().addWidget(widget)
 
@@ -425,7 +431,8 @@ class FindBar(QtWidgets.QWidget):
         page = area.currentWidget()
         top = page.mapTo(area, QtCore.QPoint(0, 0)).y() if page else 0
         self.adjustSize()
-        self.move(area.width() - self.width() - self.MARGIN, top + self.MARGIN)
+        # Clamped, or a tab widget narrower than the bar pushes it off the left edge
+        self.move(max(0, area.width() - self.width() - self.MARGIN), top + self.MARGIN)
 
     def reposition(self):
         """Deferred place(), for layout changes. When the tab bar appears its own Show
@@ -439,24 +446,23 @@ class FindBar(QtWidgets.QWidget):
         tab = self.window.current_tab
         if not tab:
             return
+        # Set before follow(), so its find_open check takes the visible branch
         tab.find_open = True
-        self.set_query(tab.find_query)
-        self.status.setText(tab.find_status)
-        self.place()
-        self.show()
-        self.raise_()
+        self.follow(tab)
         self.query.setFocus()
         self.query.selectAll()
 
     def follow(self, tab: "WebTab"):
-        """Mirror a tab that just became current. Deliberately does not re-run the
-        search: highlights belong to the page and survive the view being hidden, and
-        findText with an unchanged query advances to the next match, so re-running
-        would silently walk a tab off the match it was showing."""
+        """Mirror a tab that just became current, or that Ctrl+F just opened the bar
+        on. The query is restored either way, even onto the hidden box: nothing reads
+        it while hidden, but it should never disagree with the tab it mirrors. Deliberately
+        does not re-run the search: highlights belong to the page and survive the view
+        being hidden, and findText with an unchanged query advances to the next match, so
+        re-running would silently walk a tab off the match it was showing."""
+        self.set_query(tab.find_query)
         if not tab.find_open:
             self.hide()
             return
-        self.set_query(tab.find_query)
         self.status.setText(tab.find_status)
         self.place()
         self.show()
@@ -574,6 +580,10 @@ class BrowserWindow(QtWidgets.QWidget):
             b.extension.setVisible(False)
 
         self.tabs = QtWidgets.QTabWidget(self)
+        # Built right away, before the tab bar's own event filter goes in below: that
+        # filter's Show/Hide branch dereferences self.find, and an AttributeError
+        # raised inside a Qt slot aborts the process and every open tab with it
+        self.find = FindBar(self)
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
@@ -589,8 +599,6 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.tabBar().tabMoved.connect(
             lambda frm, to: self.tab_list.insert(to, self.tab_list.pop(frm))
         )
-
-        self.find = FindBar(self)
         # Window resize reaches the tab widget; the tab bar appearing or going away
         # does not, and it moves the page area under the bar
         self.tabs.installEventFilter(self)
@@ -917,7 +925,7 @@ def create(
     app.window.profile.downloadRequested.connect(download_requested)
 
     app.window.setStyleSheet(f"""
-        #controls * {{
+        #controls *, #findbar, #findbar * {{
             background: {style_bg};
             color: {style_text};
             font-size: 14pt;
