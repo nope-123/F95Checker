@@ -224,6 +224,65 @@ def test_the_buttons_step_too():
     assert seen == ["2/3", "1/3"], f"the buttons stepped {seen}"
 
 
+def test_each_tab_keeps_its_own_search():
+    app, window = browser()
+    first = window.new_tab()
+    second = window.new_tab(background=True)
+    seen = []
+    def search_first():
+        window.tabs.setCurrentIndex(0)
+        window.find.activate()
+        window.find.query.setText("cat")
+        QtCore.QTimer.singleShot(500, search_second)
+    def search_second():
+        seen.append(("first", window.find.status.text()))
+        window.tabs.setCurrentIndex(1)
+        window.find.activate()
+        window.find.query.setText("dog")
+        QtCore.QTimer.singleShot(500, back_to_first)
+    def back_to_first():
+        seen.append(("second", window.find.query.text(), window.find.status.text()))
+        window.tabs.setCurrentIndex(0)
+        # No wait: switching back must restore from the tab, not re-run the search.
+        # Re-running would advance the match, silently moving the tab off 1/3
+        seen.append(("first again", window.find.query.text(), window.find.status.text()))
+        window.tabs.setCurrentIndex(1)
+        window.find.dismiss()
+        window.tabs.setCurrentIndex(0)
+        seen.append(("still open", window.find.isVisible(), window.find.query.text()))
+        app.quit()
+    loaded(app, first, HTML, lambda: None)
+    second.page.setHtml(OTHER, QtCore.QUrl(PAGE))
+    QtCore.QTimer.singleShot(1500, search_first)
+    app.exec()
+    assert seen == [
+        ("first", "1/3"),
+        ("second", "dog", "1/2"),
+        ("first again", "cat", "1/3"),
+        ("still open", True, "cat"),
+    ], f"tab state went {seen}"
+
+
+def test_a_tab_with_no_search_hides_the_bar():
+    app, window = browser()
+    first = window.new_tab()
+    window.new_tab(background=True)
+    seen = []
+    def search():
+        window.find.activate()
+        window.find.query.setText("cat")
+        QtCore.QTimer.singleShot(500, switch)
+    def switch():
+        window.tabs.setCurrentIndex(1)
+        seen.append(window.find.isVisible())
+        window.tabs.setCurrentIndex(0)
+        seen.append(window.find.isVisible())
+        app.quit()
+    loaded(app, first, HTML, search)
+    app.exec()
+    assert seen == [False, True], f"bar visibility across tabs went {seen}"
+
+
 if __name__ == "__main__":
     tests = {
         "hidden": test_bar_starts_hidden,
@@ -237,6 +296,8 @@ if __name__ == "__main__":
         "escape": test_escape_closes_but_keeps_the_query,
         "step": test_enter_advances_and_shift_enter_goes_back,
         "buttons": test_the_buttons_step_too,
+        "pertab": test_each_tab_keeps_its_own_search,
+        "hides": test_a_tab_with_no_search_hides_the_bar,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

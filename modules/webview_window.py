@@ -442,6 +442,20 @@ class FindBar(QtWidgets.QWidget):
         self.query.setFocus()
         self.query.selectAll()
 
+    def follow(self, tab: "WebTab"):
+        """Mirror a tab that just became current. Deliberately does not re-run the
+        search: highlights belong to the page and survive the view being hidden, and
+        findText with an unchanged query advances to the next match, so re-running
+        would silently walk a tab off the match it was showing."""
+        if not tab.find_open:
+            self.hide()
+            return
+        self.set_query(tab.find_query)
+        self.status.setText(tab.find_status)
+        self.place()
+        self.show()
+        self.raise_()
+
     def dismiss(self):
         """Esc or the close button: drop the highlights, keep find_query so the next
         Ctrl+F on this tab starts from it."""
@@ -671,6 +685,7 @@ class BrowserWindow(QtWidgets.QWidget):
         self.sync_controls()
         if not tab:
             return
+        self.find.follow(tab)
         self.set_url_text(tab.view.url().url())
         self.set_progress(tab, 1 if tab.loading else 0)
         if not self.title_fixed:
