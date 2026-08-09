@@ -174,6 +174,56 @@ def test_escape_closes_but_keeps_the_query():
     assert seen == [(False, False, "cat"), ("cat", "cat")], f"escape left {seen}"
 
 
+def test_enter_advances_and_shift_enter_goes_back():
+    app, window = browser()
+    tab = window.new_tab()
+    seen = []
+    def search():
+        window.find.activate()
+        window.find.query.setText("cat")
+        QtCore.QTimer.singleShot(500, forward)
+    def forward():
+        seen.append(window.find.status.text())
+        QTest.keyClick(window.find.query, QtCore.Qt.Key.Key_Return)
+        QtCore.QTimer.singleShot(500, backward)
+    def backward():
+        seen.append(window.find.status.text())
+        QTest.keyClick(
+            window.find.query, QtCore.Qt.Key.Key_Return,
+            QtCore.Qt.KeyboardModifier.ShiftModifier,
+        )
+        QtCore.QTimer.singleShot(500, finish)
+    def finish():
+        seen.append(window.find.status.text())
+        app.quit()
+    loaded(app, tab, HTML, search)
+    app.exec()
+    assert seen == ["1/3", "2/3", "1/3"], f"stepping went {seen}"
+
+
+def test_the_buttons_step_too():
+    app, window = browser()
+    tab = window.new_tab()
+    seen = []
+    def search():
+        window.find.activate()
+        window.find.query.setText("cat")
+        QtCore.QTimer.singleShot(500, forward)
+    def forward():
+        window.find.next.click()
+        QtCore.QTimer.singleShot(500, backward)
+    def backward():
+        seen.append(window.find.status.text())
+        window.find.prev.click()
+        QtCore.QTimer.singleShot(500, finish)
+    def finish():
+        seen.append(window.find.status.text())
+        app.quit()
+    loaded(app, tab, HTML, search)
+    app.exec()
+    assert seen == ["2/3", "1/3"], f"the buttons stepped {seen}"
+
+
 if __name__ == "__main__":
     tests = {
         "hidden": test_bar_starts_hidden,
@@ -185,6 +235,8 @@ if __name__ == "__main__":
         "nomatch": test_a_query_that_matches_nothing_says_so,
         "empty": test_emptying_the_box_clears_the_counter,
         "escape": test_escape_closes_but_keeps_the_query,
+        "step": test_enter_advances_and_shift_enter_goes_back,
+        "buttons": test_the_buttons_step_too,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

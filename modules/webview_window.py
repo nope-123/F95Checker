@@ -367,6 +367,8 @@ class FindBar(QtWidgets.QWidget):
 
         self.done.clicked.connect(lambda _=None: self.dismiss())
         self.query.textChanged.connect(lambda _: self.search())
+        self.prev.clicked.connect(lambda _=None: self.search(backward=True))
+        self.next.clicked.connect(lambda _=None: self.search(backward=False))
         self.query.installEventFilter(self)
         self.hide()
 
@@ -458,6 +460,13 @@ class FindBar(QtWidgets.QWidget):
             # QEvent.Type and MouseButton checks elsewhere in this file
             if event.key() == QtCore.Qt.Key.Key_Escape:
                 self.dismiss()
+                return True
+            if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+                # Not returnPressed: that signal carries no modifiers, and Shift+Enter
+                # for the previous match is the binding every browser has
+                self.search(backward=bool(
+                    event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier
+                ))
                 return True
         return super().eventFilter(obj, event)
 
