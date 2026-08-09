@@ -123,6 +123,11 @@ class WebTab:
         self.icon = icon
         self.loading = False
         self.probe = False
+        # Find state lives on the tab: the window has one bar, and it mirrors
+        # whichever tab is current
+        self.find_open = False
+        self.find_query = ""
+        self.find_status = ""
         self.view = QtWebEngineWidgets.QWebEngineView(window.profile, window)
         # Attributes stuffed onto the view, kept for the minimal-mode entry points
         self.view.page = self.view.page()
@@ -327,6 +332,102 @@ class WebTab:
             self.load_started()
 
 
+class FindBar(QtWidgets.QWidget):
+    """Ctrl+F bar, floated over the top right of the page. One per window: only one
+    tab is ever on screen, so the bar mirrors whichever tab is current."""
+
+    MARGIN = 8
+
+    def __init__(self, window: "BrowserWindow"):
+        # Parented to the tab widget, not to a view: a view is backed by its own
+        # composited surface, and the tab widget is anyway exactly the rectangle the
+        # page fills. Never laid out, so it keeps wherever move() puts it
+        super().__init__(window.tabs)
+        self.window = window
+        self.setObjectName("findbar")
+        self.setLayout(QtWidgets.QHBoxLayout(self))
+        self.layout().setContentsMargins(4, 4, 4, 4)
+        self.layout().setSpacing(2)
+        self.setAutoFillBackground(True)  # or the page shows through the bar
+
+        self.query = QtWidgets.QLineEdit(self)
+        self.query.setPlaceholderText("Find")
+        self.query.setFixedWidth(180)
+        self.status = QtWidgets.QLabel("", self)
+        # Fixed width, because a longer count would need the bar itself to grow and
+        # nothing resizes a widget that no layout owns
+        self.status.setFixedWidth(64)
+        self.status.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        # Not named close: that is QWidget.close, and shadowing it breaks closing
+        self.prev = QtWidgets.QPushButton("\U000f005d", self)  # nf-md-arrow_up
+        self.next = QtWidgets.QPushButton("\U000f0045", self)  # nf-md-arrow_down
+        self.done = QtWidgets.QPushButton("\U000f0156", self)  # nf-md-close
+        for widget in (self.query, self.status, self.prev, self.next, self.done):
+            self.layout().addWidget(widget)
+
+        self.done.clicked.connect(lambda _=None: self.dismiss())
+        self.query.installEventFilter(self)
+        self.hide()
+
+    def set_query(self, text: str):
+        # Blocked, or restoring a tab's query would look like typing and search
+        self.query.blockSignals(True)
+        self.query.setText(text)
+        self.query.blockSignals(False)
+
+    def place(self):
+        """Top right of the page area, in the tab widget's coordinates. The page is a
+        grandchild -- it sits inside the tab widget's own stack -- so its offset has to
+        be mapped rather than read off its geometry, which is relative to that stack."""
+        area = self.window.tabs
+        page = area.currentWidget()
+        top = page.mapTo(area, QtCore.QPoint(0, 0)).y() if page else 0
+        self.adjustSize()
+        self.move(area.width() - self.width() - self.MARGIN, top + self.MARGIN)
+
+    def reposition(self):
+        """Deferred place(), for layout changes. When the tab bar appears its own Show
+        arrives before Qt has moved the page down, so placing now would use a layout one
+        pass out of date and leave the bar sitting on the tab bar."""
+        QtCore.QTimer.singleShot(0, self.place)
+
+    def activate(self):
+        """Ctrl+F: show over the current tab, focused, with its last query selected so
+        typing replaces it."""
+        tab = self.window.current_tab
+        if not tab:
+            return
+        tab.find_open = True
+        self.set_query(tab.find_query)
+        self.status.setText(tab.find_status)
+        self.place()
+        self.show()
+        self.raise_()
+        self.query.setFocus()
+        self.query.selectAll()
+
+    def dismiss(self):
+        """Esc or the close button: drop the highlights, keep find_query so the next
+        Ctrl+F on this tab starts from it."""
+        tab = self.window.current_tab
+        if tab:
+            tab.find_open = False
+            tab.find_status = ""
+            tab.page.findText("")
+            tab.view.setFocus()
+        self.status.setText("")
+        self.hide()
+
+    def eventFilter(self, obj, event):
+        if obj is self.query and event.type() is QtCore.QEvent.Type.KeyPress:
+            # key() is a plain int in PyQt6, so this compares by value, unlike the
+            # QEvent.Type and MouseButton checks elsewhere in this file
+            if event.key() == QtCore.Qt.Key.Key_Escape:
+                self.dismiss()
+                return True
+        return super().eventFilter(obj, event)
+
+
 class BrowserWindow(QtWidgets.QWidget):
     # Qt only recognizes signals declared as class attributes
     url_received = QtCore.pyqtSignal(str, dict)
@@ -426,6 +527,11 @@ class BrowserWindow(QtWidgets.QWidget):
             lambda frm, to: self.tab_list.insert(to, self.tab_list.pop(frm))
         )
 
+        self.find = FindBar(self)
+        # Window resize reaches the tab widget; the tab bar appearing or going away
+        # does not, and it moves the page area under the bar
+        self.tabs.installEventFilter(self)
+
         if buttons and tabs:
             # Only with the chrome: the minimal windows have no tab bar to show
             for keys, handler in (
@@ -434,6 +540,11 @@ class BrowserWindow(QtWidgets.QWidget):
                 ("Ctrl+Tab", self.next_tab),
             ):
                 QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(handler)
+
+        if buttons:
+            # Not gated on tabs like the shortcuts above: those act on tabs, find acts
+            # on a page. This keeps it out of the chrome-less login and cookie windows
+            QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self).activated.connect(self.find.activate)
 
         self.layout().addWidget(self.controls, stretch=0)
         self.layout().addWidget(self.tabs, stretch=1)
@@ -463,12 +574,21 @@ class BrowserWindow(QtWidgets.QWidget):
         return tab
 
     def eventFilter(self, obj, event):
-        if obj is self.tabs.tabBar() and event.type() is QtCore.QEvent.Type.MouseButtonRelease:
-            if event.button() is QtCore.Qt.MouseButton.MiddleButton:
-                # tabAt returns -1 off the end of the strip, where a click closes nothing
-                if (index := obj.tabAt(event.position().toPoint())) >= 0:
-                    self.close_tab(index)
-                    return True
+        if obj is self.tabs:
+            # The window was resized, so the page area moved under the find bar
+            if event.type() is QtCore.QEvent.Type.Resize:
+                self.find.reposition()
+        elif obj is self.tabs.tabBar():
+            # The tab bar coming or going moves the page area down or up without the
+            # tab widget resizing at all, so it needs an event of its own
+            if event.type() in (QtCore.QEvent.Type.Show, QtCore.QEvent.Type.Hide):
+                self.find.reposition()
+            if event.type() is QtCore.QEvent.Type.MouseButtonRelease:
+                if event.button() is QtCore.Qt.MouseButton.MiddleButton:
+                    # tabAt returns -1 off the end of the strip, where a click closes nothing
+                    if (index := obj.tabAt(event.position().toPoint())) >= 0:
+                        self.close_tab(index)
+                        return True
         return super().eventFilter(obj, event)
 
     def close_tab(self, index: int):
