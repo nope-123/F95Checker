@@ -366,6 +366,7 @@ class FindBar(QtWidgets.QWidget):
             self.layout().addWidget(widget)
 
         self.done.clicked.connect(lambda _=None: self.dismiss())
+        self.query.textChanged.connect(lambda _: self.search())
         self.query.installEventFilter(self)
         self.hide()
 
@@ -374,6 +375,39 @@ class FindBar(QtWidgets.QWidget):
         self.query.blockSignals(True)
         self.query.setText(text)
         self.query.blockSignals(False)
+
+    def search(self, backward: bool = False):
+        """Search the current tab for whatever is in the box"""
+        tab = self.window.current_tab
+        if not tab:
+            return
+        tab.find_query = self.query.text()
+        self.run(tab, backward)
+
+    def run(self, tab: "WebTab", backward: bool = False):
+        """Search one named tab, which is not always the one on screen: a background
+        tab re-runs its query after a page load"""
+        from PyQt6 import QtWebEngineCore
+        if not tab.find_query:
+            # Qt does not call the callback for an empty string, so the counter has to
+            # be cleared here or it keeps whatever the last real search left in it
+            tab.page.findText("")
+            self.set_status(tab, "")
+            return
+        FindFlag = QtWebEngineCore.QWebEnginePage.FindFlag
+        tab.page.findText(
+            tab.find_query,
+            FindFlag.FindBackward if backward else FindFlag(0),
+            lambda result: self.found(tab, result),
+        )
+
+    def found(self, tab: "WebTab", result):
+        self.set_status(tab, f"{result.activeMatch()}/{result.numberOfMatches()}")
+
+    def set_status(self, tab: "WebTab", text: str):
+        tab.find_status = text
+        if tab.is_current:  # a background tab must never drive the chrome
+            self.status.setText(text)
 
     def place(self):
         """Top right of the page area, in the tab widget's coordinates. The page is a
