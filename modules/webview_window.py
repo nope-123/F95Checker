@@ -942,6 +942,12 @@ def create(
             padding: 5px;
             padding-bottom: 3px;
         }}
+        #findbar QPushButton {{
+            /* Named here too, or these private use area glyphs only render where
+               the platform's font fallback happens to land on the same family.
+               No padding: unlike the chrome's, these buttons are a fixed width */
+            font-family: '{icon_font}';
+        }}
         #controls QPushButton:disabled {{
             color: {style_text_dim};
         }}
