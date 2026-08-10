@@ -368,10 +368,8 @@ class FindBar(QtWidgets.QWidget):
         self.prev = QtWidgets.QPushButton("\U000f005d", self)  # nf-md-arrow_up
         self.next = QtWidgets.QPushButton("\U000f0045", self)  # nf-md-arrow_down
         self.done = QtWidgets.QPushButton("\U000f0156", self)  # nf-md-close
-        # Fixed, like status above: nothing resizes a widget no layout of a parent
-        # owns, and a single glyph left to its own size hint reports Qt's native
-        # push-button minimum -- about 80px each, which is what made this bar 500px
-        # wide before it had a stylesheet rule to match
+        # Fixed, like status above: a single glyph left to its own size hint reports
+        # Qt's native push-button minimum, about 80px each
         for button in (self.prev, self.next, self.done):
             button.setFixedWidth(30)
         for widget in (self.query, self.status, self.prev, self.next, self.done):
@@ -383,12 +381,6 @@ class FindBar(QtWidgets.QWidget):
         self.next.clicked.connect(lambda _=None: self.search(backward=False))
         self.query.installEventFilter(self)
         self.hide()
-
-    def set_query(self, text: str):
-        # Blocked, or restoring a tab's query would look like typing and search
-        self.query.blockSignals(True)
-        self.query.setText(text)
-        self.query.blockSignals(False)
 
     def search(self, backward: bool = False):
         """Search the current tab for whatever is in the box"""
@@ -412,11 +404,10 @@ class FindBar(QtWidgets.QWidget):
         tab.page.findText(
             tab.find_query,
             FindFlag.FindBackward if backward else FindFlag(0),
-            lambda result: self.found(tab, result),
+            lambda result: self.set_status(
+                tab, f"{result.activeMatch()}/{result.numberOfMatches()}"
+            ),
         )
-
-    def found(self, tab: "WebTab", result):
-        self.set_status(tab, f"{result.activeMatch()}/{result.numberOfMatches()}")
 
     def set_status(self, tab: "WebTab", text: str):
         tab.find_status = text
@@ -459,7 +450,10 @@ class FindBar(QtWidgets.QWidget):
         does not re-run the search: highlights belong to the page and survive the view
         being hidden, and findText with an unchanged query advances to the next match, so
         re-running would silently walk a tab off the match it was showing."""
-        self.set_query(tab.find_query)
+        # Blocked, or restoring the query would look like typing and search
+        self.query.blockSignals(True)
+        self.query.setText(tab.find_query)
+        self.query.blockSignals(False)
         if not tab.find_open:
             self.hide()
             return
@@ -645,21 +639,19 @@ class BrowserWindow(QtWidgets.QWidget):
         return tab
 
     def eventFilter(self, obj, event):
-        if obj is self.tabs:
-            # The window was resized, so the page area moved under the find bar
-            if event.type() is QtCore.QEvent.Type.Resize:
-                self.find.reposition()
-        elif obj is self.tabs.tabBar():
-            # The tab bar coming or going moves the page area down or up without the
-            # tab widget resizing at all, so it needs an event of its own
-            if event.type() in (QtCore.QEvent.Type.Show, QtCore.QEvent.Type.Hide):
-                self.find.reposition()
-            if event.type() is QtCore.QEvent.Type.MouseButtonRelease:
-                if event.button() is QtCore.Qt.MouseButton.MiddleButton:
-                    # tabAt returns -1 off the end of the strip, where a click closes nothing
-                    if (index := obj.tabAt(event.position().toPoint())) >= 0:
-                        self.close_tab(index)
-                        return True
+        # Only the tab widget and its own tab bar are filtered. A window resize reaches
+        # the first, the tab bar coming or going moves the page area without resizing
+        # it at all, and reposition() is a deferred no-op wherever nothing moved
+        if event.type() in (
+            QtCore.QEvent.Type.Resize, QtCore.QEvent.Type.Show, QtCore.QEvent.Type.Hide,
+        ):
+            self.find.reposition()
+        elif event.type() is QtCore.QEvent.Type.MouseButtonRelease and obj is self.tabs.tabBar():
+            if event.button() is QtCore.Qt.MouseButton.MiddleButton:
+                # tabAt returns -1 off the end of the strip, where a click closes nothing
+                if (index := obj.tabAt(event.position().toPoint())) >= 0:
+                    self.close_tab(index)
+                    return True
         return super().eventFilter(obj, event)
 
     def close_tab(self, index: int):

@@ -39,15 +39,30 @@ def browser():
     return app, window
 
 
-def loaded(app, tab, html: str, then):
-    """setHtml is asynchronous, and so is every find that follows it, so a case is a
-    chain of callbacks that ends by quitting the app. Disconnected after the first
-    load, or a case that navigates again would restart its own chain and quit early."""
+def find(window, text: str):
+    """What Ctrl+F then typing does: open the bar on the current tab, enter a query"""
+    window.find.activate()
+    window.find.query.setText(text)
+
+
+def run_steps(app, tab, html: str, *steps, gap=500, settle=200):
+    """Every asynchronous case here has the same shape: set a page, let it settle, walk
+    the steps with a pause between each, quit. setHtml and findText are both
+    asynchronous, and Chromium answers a find in a couple of milliseconds -- the pauses
+    are slack, not tuned timeouts. loadFinished is disconnected after the first load,
+    or a case that navigates again would restart its own chain and quit early."""
+    queue = list(steps)
+    def step():
+        if not queue:
+            return app.quit()
+        queue.pop(0)()
+        QtCore.QTimer.singleShot(gap, step)
     def once(ok):
         tab.view.loadFinished.disconnect(once)
-        QtCore.QTimer.singleShot(200, then)
+        QtCore.QTimer.singleShot(settle, step)
     tab.view.loadFinished.connect(once)
     tab.page.setHtml(html, QtCore.QUrl(PAGE))
+    app.exec()
 
 
 def test_bar_starts_hidden():
@@ -105,15 +120,11 @@ def test_typing_reports_every_match():
     app, window = browser()
     tab = window.new_tab()
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, finish)
-    def finish():
-        seen.append(window.find.status.text())
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
+    run_steps(
+        app, tab, HTML,
+        lambda: find(window, "cat"),
+        lambda: seen.append(window.find.status.text()),
+    )
     assert seen == ["1/3"], f"counter showed {seen}, expected the first of three matches"
 
 
@@ -121,15 +132,11 @@ def test_a_query_that_matches_nothing_says_so():
     app, window = browser()
     tab = window.new_tab()
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("giraffe")
-        QtCore.QTimer.singleShot(500, finish)
-    def finish():
-        seen.append(window.find.status.text())
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
+    run_steps(
+        app, tab, HTML,
+        lambda: find(window, "giraffe"),
+        lambda: seen.append(window.find.status.text()),
+    )
     assert seen == ["0/0"], f"counter showed {seen}, expected no matches"
 
 
@@ -137,20 +144,14 @@ def test_emptying_the_box_clears_the_counter():
     app, window = browser()
     tab = window.new_tab()
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, clear)
-    def clear():
+    run_steps(
+        app, tab, HTML,
+        lambda: find(window, "cat"),
         # Qt never calls the callback for an empty string, so a stale counter would
         # sit there forever
-        window.find.query.setText("")
-        QtCore.QTimer.singleShot(500, finish)
-    def finish():
-        seen.append((window.find.status.text(), tab.find_status))
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
+        lambda: window.find.query.setText(""),
+        lambda: seen.append((window.find.status.text(), tab.find_status)),
+    )
     assert seen == [("", "")], f"clearing the box left {seen}"
 
 
@@ -158,19 +159,13 @@ def test_escape_closes_but_keeps_the_query():
     app, window = browser()
     tab = window.new_tab()
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, escape)
     def escape():
         QTest.keyClick(window.find.query, QtCore.Qt.Key.Key_Escape)
         seen.append((window.find.isVisible(), tab.find_open, tab.find_query))
         # Ctrl+F again starts from the last query, selected, so typing replaces it
         window.find.activate()
         seen.append((window.find.query.text(), window.find.query.selectedText()))
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
+    run_steps(app, tab, HTML, lambda: find(window, "cat"), escape)
     assert seen == [(False, False, "cat"), ("cat", "cat")], f"escape left {seen}"
 
 
@@ -178,50 +173,23 @@ def test_enter_advances_and_shift_enter_goes_back():
     app, window = browser()
     tab = window.new_tab()
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, forward)
     def forward():
         seen.append(window.find.status.text())
         QTest.keyClick(window.find.query, QtCore.Qt.Key.Key_Return)
-        QtCore.QTimer.singleShot(500, backward)
     def backward():
         seen.append(window.find.status.text())
         QTest.keyClick(
             window.find.query, QtCore.Qt.Key.Key_Return,
             QtCore.Qt.KeyboardModifier.ShiftModifier,
         )
-        QtCore.QTimer.singleShot(500, finish)
-    def finish():
-        seen.append(window.find.status.text())
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
+    run_steps(
+        app, tab, HTML,
+        lambda: find(window, "cat"),
+        forward,
+        backward,
+        lambda: seen.append(window.find.status.text()),
+    )
     assert seen == ["1/3", "2/3", "1/3"], f"stepping went {seen}"
-
-
-def test_the_buttons_step_too():
-    app, window = browser()
-    tab = window.new_tab()
-    seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, forward)
-    def forward():
-        window.find.next.click()
-        QtCore.QTimer.singleShot(500, backward)
-    def backward():
-        seen.append(window.find.status.text())
-        window.find.prev.click()
-        QtCore.QTimer.singleShot(500, finish)
-    def finish():
-        seen.append(window.find.status.text())
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
-    assert seen == ["2/3", "1/3"], f"the buttons stepped {seen}"
 
 
 def test_each_tab_keeps_its_own_search():
@@ -231,15 +199,11 @@ def test_each_tab_keeps_its_own_search():
     seen = []
     def search_first():
         window.tabs.setCurrentIndex(0)
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, search_second)
+        find(window, "cat")
     def search_second():
         seen.append(("first", window.find.status.text()))
         window.tabs.setCurrentIndex(1)
-        window.find.activate()
-        window.find.query.setText("dog")
-        QtCore.QTimer.singleShot(500, back_to_first)
+        find(window, "dog")
     def back_to_first():
         seen.append(("second", window.find.query.text(), window.find.status.text()))
         window.tabs.setCurrentIndex(0)
@@ -250,11 +214,9 @@ def test_each_tab_keeps_its_own_search():
         window.find.dismiss()
         window.tabs.setCurrentIndex(0)
         seen.append(("still open", window.find.isVisible(), window.find.query.text()))
-        app.quit()
-    loaded(app, first, HTML, lambda: None)
     second.page.setHtml(OTHER, QtCore.QUrl(PAGE))
-    QtCore.QTimer.singleShot(1500, search_first)
-    app.exec()
+    # settle covers the second tab's own load as well as the first's
+    run_steps(app, first, HTML, search_first, search_second, back_to_first, settle=1500)
     assert seen == [
         ("first", "1/3"),
         ("second", "dog", "1/2"),
@@ -268,18 +230,12 @@ def test_a_tab_with_no_search_hides_the_bar():
     first = window.new_tab()
     window.new_tab(background=True)
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, switch)
     def switch():
         window.tabs.setCurrentIndex(1)
         seen.append(window.find.isVisible())
         window.tabs.setCurrentIndex(0)
         seen.append(window.find.isVisible())
-        app.quit()
-    loaded(app, first, HTML, search)
-    app.exec()
+    run_steps(app, first, HTML, lambda: find(window, "cat"), switch)
     assert seen == [False, True], f"bar visibility across tabs went {seen}"
 
 
@@ -287,21 +243,18 @@ def test_navigating_searches_the_new_page():
     app, window = browser()
     tab = window.new_tab()
     seen = []
-    def search():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, navigate)
     def navigate():
         seen.append(window.find.status.text())
         # Highlights die with the old document, so a stale 1/3 over a page with no cat
         # in it would be a lie
         tab.page.setHtml(OTHER, QtCore.QUrl(PAGE))
-        QtCore.QTimer.singleShot(1500, finish)
-    def finish():
-        seen.append(window.find.status.text())
-        app.quit()
-    loaded(app, tab, HTML, search)
-    app.exec()
+    run_steps(
+        app, tab, HTML,
+        lambda: find(window, "cat"),
+        navigate,
+        lambda: seen.append(window.find.status.text()),
+        gap=1500,  # a whole navigation has to land between two of these steps
+    )
     assert seen == ["1/3", "0/0"], f"counter across a navigation went {seen}"
 
 
@@ -314,10 +267,6 @@ def test_background_tab_navigating_does_not_drive_the_chrome():
     foreground = window.new_tab()
     background = window.new_tab(background=True)
     seen = []
-    def search_foreground():
-        window.find.activate()
-        window.find.query.setText("cat")
-        QtCore.QTimer.singleShot(500, navigate_background)
     def navigate_background():
         seen.append(window.find.status.text())
         # Never shown or activated -- its find state is set directly, the way a tab
@@ -325,12 +274,13 @@ def test_background_tab_navigating_does_not_drive_the_chrome():
         background.find_open = True
         background.find_query = "dog"
         background.page.setHtml(OTHER, QtCore.QUrl(PAGE))
-        QtCore.QTimer.singleShot(1500, finish)
-    def finish():
-        seen.append((window.find.status.text(), background.find_status))
-        app.quit()
-    loaded(app, foreground, HTML, search_foreground)
-    app.exec()
+    run_steps(
+        app, foreground, HTML,
+        lambda: find(window, "cat"),
+        navigate_background,
+        lambda: seen.append((window.find.status.text(), background.find_status)),
+        gap=1500,
+    )
     assert seen == ["1/3", ("1/3", "1/2")], (
         f"a background tab's own search leaked onto the chrome: {seen}"
     )
@@ -348,7 +298,6 @@ if __name__ == "__main__":
         "empty": test_emptying_the_box_clears_the_counter,
         "escape": test_escape_closes_but_keeps_the_query,
         "step": test_enter_advances_and_shift_enter_goes_back,
-        "buttons": test_the_buttons_step_too,
         "pertab": test_each_tab_keeps_its_own_search,
         "hides": test_a_tab_with_no_search_hides_the_bar,
         "navigate": test_navigating_searches_the_new_page,
