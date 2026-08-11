@@ -38,8 +38,8 @@ def stub_question(answer):
     case answers for the user. Replaced and never restored: one QApplication per
     process means each case is its own process, and it exits right after."""
     asked = []
-    def question(parent, title, text, *args):
-        asked.append(text)
+    def question(parent, title, text, buttons, default):
+        asked.append((title, text, buttons, default))
         return answer
     QtWidgets.QMessageBox.question = staticmethod(question)
     return asked
@@ -64,8 +64,13 @@ def test_two_tabs_and_no_keeps_the_window():
     # The teardown deletes every view, so a veto that fell through to it would leave
     # this window up and empty
     assert len(window.tab_list) == 2, f"a vetoed close still took tabs: {len(window.tab_list)}"
-    assert len(asked) == 1, f"expected one prompt, got {asked}"
-    assert "2 tabs" in asked[0], f"the prompt did not name the tab count: {asked[0]!r}"
+    button = QtWidgets.QMessageBox.StandardButton
+    assert asked == [(
+        "Close browser",
+        "This window has 2 tabs open. Close them all?",
+        button.Yes | button.No,
+        button.No,  # a stray Enter must not discard the tabs
+    )], f"the prompt was not the one the spec asks for: {asked}"
 
 
 def test_two_tabs_and_yes_closes():
