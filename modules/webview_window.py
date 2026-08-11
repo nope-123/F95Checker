@@ -985,6 +985,21 @@ def create(
         QMenu::icon {{
             padding-left: 7px;
         }}
+        QMessageBox {{
+            background: {style_bg};
+        }}
+        QMessageBox QLabel {{
+            color: {style_text};
+        }}
+        QMessageBox QPushButton {{
+            background: {style_bg};
+            color: {style_text};
+            border-radius: {style_corner_radius};
+            padding: 5px 12px;
+        }}
+        QMessageBox QPushButton:hover {{
+            background: {style_accent};
+        }}
     """)
 
     app.window.new_tab()

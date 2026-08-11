@@ -17,6 +17,7 @@
 - Donor DDL downloads can now be retried when failed (by @WillyJL)
 - Tabs in the integrated browser: opening multiple pages reuses one window instead of spawning a new process each time
 - Find in page in the integrated browser: Ctrl+F, with a match counter and Enter / Shift+Enter to step through matches
+- Warning before closing the integrated browser with more than one tab open
 - Ad and tracker blocking in the integrated browser, using HaGeZi's Pro blocklist
 - Option to hand off integrated browser downloads to an external download manager (e.g. IDM) instead of the save dialog
 
