@@ -28,7 +28,6 @@ def browser(tabs=True):
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
         proxy_auth=None, title="test",
     )
-    window.resize(800, 600)
     window.show()
     return app, window
 

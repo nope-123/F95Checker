@@ -722,24 +722,21 @@ class BrowserWindow(QtWidgets.QWidget):
         self.controls.progress.repaint()
 
     def closeEvent(self, close: QtGui.QCloseEvent):
-        # Every close path lands here -- the title bar button, Alt+F4, and close_tab
-        # closing the last tab -- so one guard covers all of them and no caller needs
-        # to know it exists. That last path can never prompt: it only reaches close()
-        # with a single tab left, which is below the threshold
-        # tabs_enabled as well as the count: see test_webview_close.py's chrome-less case
-        if self.tabs_enabled and len(self.tab_list) > 1 and QtWidgets.QMessageBox.question(
-            self, "Close browser",
-            f"This window has {len(self.tab_list)} tabs open. Close them all?",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            # Explicit, rather than letting the platform pick: a stray Enter on a dialog
-            # that just appeared must not discard a window full of tabs
-            QtWidgets.QMessageBox.StandardButton.No,
-        ) is not QtWidgets.QMessageBox.StandardButton.Yes:
-            # Returning is load-bearing. An ignored close that fell through to the
-            # teardown below would leave the window up with every one of its views
-            # already deleted
-            close.ignore()
-            return
+        # The one choke point: title bar, Alt+F4, and close_tab on the last tab. That
+        # last one can't prompt -- it only reaches close() with one tab left.
+        # tabs_enabled too, not just the count: test_webview_close.py's chrome-less case
+        if self.tabs_enabled and len(self.tab_list) > 1:
+            button = QtWidgets.QMessageBox.StandardButton
+            answer = QtWidgets.QMessageBox.question(
+                self, "Close browser",
+                f"This window has {len(self.tab_list)} tabs open. Close them all?",
+                button.Yes | button.No,
+                button.No,  # a stray Enter must not discard a window full of tabs
+            )
+            if answer is not button.Yes:
+                # Falling through would delete every view under a window still on screen
+                close.ignore()
+                return
         close.accept()
         for tab in self.tab_list:
             tab.view.deleteLater()
@@ -994,20 +991,16 @@ def create(
         QMessageBox QPushButton {{
             background: {style_bg};
             color: {style_text};
-            /* A border is required, not decoration: Qt keeps drawing the native button
-               chrome over a styled background until one is set, which would leave these
-               two the only unthemed thing left on the dialog. #controls does the same
-               above, with 0px. Rounding needs a border box to round, too */
+            /* Qt draws native chrome over a styled background until a border is set
+               (#controls uses 0px above) */
             border: 1px solid {style_text_dim};
             border-radius: {style_corner_radius};
-            padding: 5px 12px;
         }}
         QMessageBox QPushButton:hover {{
             background: {style_accent};
         }}
         QMessageBox QPushButton:focus {{
-            /* Styling the border above replaces the native focus ring, and this dialog
-               is answerable by keyboard -- put one back */
+            /* Styling the border replaced the native focus ring -- put one back */
             border-color: {style_accent};
         }}
     """)
