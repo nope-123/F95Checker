@@ -722,6 +722,24 @@ class BrowserWindow(QtWidgets.QWidget):
         self.controls.progress.repaint()
 
     def closeEvent(self, close: QtGui.QCloseEvent):
+        # Every close path lands here -- the title bar button, Alt+F4, and close_tab
+        # closing the last tab -- so one guard covers all of them and no caller needs
+        # to know it exists. That last path can never prompt: it only reaches close()
+        # with a single tab left, which is below the threshold
+        # tabs_enabled as well as the count: see test_webview_close.py's chrome-less case
+        if self.tabs_enabled and len(self.tab_list) > 1 and QtWidgets.QMessageBox.question(
+            self, "Close browser",
+            f"This window has {len(self.tab_list)} tabs open. Close them all?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            # Explicit, rather than letting the platform pick: a stray Enter on a dialog
+            # that just appeared must not discard a window full of tabs
+            QtWidgets.QMessageBox.StandardButton.No,
+        ) is not QtWidgets.QMessageBox.StandardButton.Yes:
+            # Returning is load-bearing. An ignored close that fell through to the
+            # teardown below would leave the window up with every one of its views
+            # already deleted
+            close.ignore()
+            return
         close.accept()
         for tab in self.tab_list:
             tab.view.deleteLater()
