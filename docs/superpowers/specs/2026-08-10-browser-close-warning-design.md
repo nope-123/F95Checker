@@ -136,3 +136,17 @@ keeps such a window at one tab.
 - Honouring a page's own `beforeunload` handler
 - Warning about in-flight downloads: they are handed to an external manager or a
   save dialog, so there is rarely an in-process download to lose
+
+## Known limitations
+
+Both surfaced in review, both accepted rather than fixed:
+
+- The modal spins its own event loop, so a tab pushed in by the main process
+  while the prompt is up is not counted in the text and gets discarded by `Yes`.
+  The race pre-dates this feature -- the same interleaving used to just close the
+  window -- and it is self-healing, since the parent's next `put()` raises
+  `DaemonPipeExit` and respawns. Closing it costs more than the outcome is worth.
+- Ending a Windows session with 2+ tabs open puts the browser subprocess on the
+  "this app is preventing you from restarting" screen until it times out. Chrome
+  and Firefox do the same thing, and it is the one path where the guard delays
+  something the user did not initiate.
