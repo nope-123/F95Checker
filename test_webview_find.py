@@ -22,6 +22,13 @@ from PyQt6 import (  # noqa: E402
 )
 from PyQt6.QtTest import QTest  # noqa: E402
 
+# Quitting closes every visible window, so the two-tab cases reach the browser's own
+# "close them all?" guard and hang on a modal. These cases are about find, not
+# closing -- answer it.
+QtWidgets.QMessageBox.question = staticmethod(
+    lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes
+)
+
 PAGE = "https://find.invalid/page"
 HTML = "<html><body><p>cat</p><p>dog cat</p><p>a cat here</p></body></html>"
 OTHER = "<html><body><p>dog</p><p>dog</p></body></html>"
