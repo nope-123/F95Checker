@@ -995,6 +995,11 @@ def create(
                (#controls uses 0px above) */
             border: 1px solid {style_text_dim};
             border-radius: {style_corner_radius};
+            /* Styling the button at all drops the native minimum button size with it, so
+               these collapse to the width of the word inside them. min-width is on the
+               contents rect, so this comes to roughly the 75px Windows would have used */
+            min-width: 50px;
+            padding: 5px 12px;
         }}
         QMessageBox QPushButton:hover {{
             background: {style_accent};
