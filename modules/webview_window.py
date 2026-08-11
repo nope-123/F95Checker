@@ -994,11 +994,21 @@ def create(
         QMessageBox QPushButton {{
             background: {style_bg};
             color: {style_text};
+            /* A border is required, not decoration: Qt keeps drawing the native button
+               chrome over a styled background until one is set, which would leave these
+               two the only unthemed thing left on the dialog. #controls does the same
+               above, with 0px. Rounding needs a border box to round, too */
+            border: 1px solid {style_text_dim};
             border-radius: {style_corner_radius};
             padding: 5px 12px;
         }}
         QMessageBox QPushButton:hover {{
             background: {style_accent};
+        }}
+        QMessageBox QPushButton:focus {{
+            /* Styling the border above replaces the native focus ring, and this dialog
+               is answerable by keyboard -- put one back */
+            border-color: {style_accent};
         }}
     """)
 
