@@ -32,14 +32,17 @@ the event and tears down every tab. It gains one branch in front of that:
 
 ```python
 def closeEvent(self, close: QtGui.QCloseEvent):
-    if self.tabs_enabled and len(self.tab_list) > 1 and QtWidgets.QMessageBox.question(
-        self, "Close browser",
-        f"This window has {len(self.tab_list)} tabs open. Close them all?",
-        QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-        QtWidgets.QMessageBox.StandardButton.No,
-    ) is not QtWidgets.QMessageBox.StandardButton.Yes:
-        close.ignore()
-        return
+    if self.tabs_enabled and len(self.tab_list) > 1:
+        button = QtWidgets.QMessageBox.StandardButton
+        answer = QtWidgets.QMessageBox.question(
+            self, "Close browser",
+            f"This window has {len(self.tab_list)} tabs open. Close them all?",
+            button.Yes | button.No,
+            button.No,
+        )
+        if answer is not button.Yes:
+            close.ignore()
+            return
     close.accept()
     # existing teardown, unchanged
 ```
@@ -92,9 +95,17 @@ from the style values already passed in:
 
 - `QMessageBox` — `background: {style_bg}`
 - `QMessageBox QLabel` — `color: {style_text}`
-- `QMessageBox QPushButton` — `{style_bg}` / `{style_text}`, `border-radius:
-  {style_corner_radius}`, and padding
+- `QMessageBox QPushButton` — `{style_bg}` / `{style_text}`, `border: 1px solid
+  {style_text_dim}`, `border-radius: {style_corner_radius}`, `min-width` and padding
 - `QMessageBox QPushButton:hover` — `background: {style_accent}`
+- `QMessageBox QPushButton:focus` — `border-color: {style_accent}`
+
+The border is not decoration. Qt keeps drawing the native button chrome over a
+styled background until one is set, and setting it drops the native minimum
+button size too — hence the explicit `min-width`, without which the buttons
+collapse to the width of the word inside them. The `:focus` rule replaces the
+native focus ring that styling the border removes, which is also what marks
+`No` as the default when the dialog opens.
 
 Unscoped on purpose: the download-manager failure warning
 (`modules/webview_window.py:904-909`) is themed by the same rules, rather than
