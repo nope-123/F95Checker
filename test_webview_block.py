@@ -26,6 +26,15 @@ from PyQt6 import (  # noqa: E402
     QtWidgets,
 )
 
+# Same stub as test_webview_find.py, for the same reason: app.quit() closes every
+# visible top-level window, so a case that quits with two tabs open reaches the
+# browser's own "close them all?" guard and hangs on a modal. The cases here get away
+# without it today only because browser() never calls show() -- one added show() and
+# the run would block forever. Cheaper to answer the dialog than to rely on that.
+QtWidgets.QMessageBox.question = staticmethod(
+    lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes
+)
+
 PAGE = "https://opener.invalid/file"
 BLOCKED = "https://blocked.invalid/d?zid=1"
 CROSS_SITE = "https://elsewhere.invalid/d?zid=1"

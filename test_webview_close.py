@@ -84,6 +84,22 @@ def test_two_tabs_and_yes_closes():
     assert len(asked) == 1, f"expected one prompt, got {asked}"
 
 
+def test_closing_tabs_one_by_one_never_asks():
+    """close_tab is the third close path, and the only one that reaches close()
+    without the user aiming at the window. It cannot prompt because it only gets there
+    on its <= 1 branch -- but that is a property of the count, so a refactor that
+    popped the tab before closing would flip it and nothing else here would notice."""
+    app, window = browser()
+    window.new_tab()
+    window.new_tab(background=True)
+    asked = stub_question(QtWidgets.QMessageBox.StandardButton.No)
+    window.close_tab(0)
+    assert len(window.tab_list) == 1, "the first close_tab did not drop a tab"
+    window.close_tab(0)
+    assert not window.isVisible(), "the last close_tab left the window up"
+    assert asked == [], f"closing tabs one by one asked: {asked}"
+
+
 def test_a_window_without_tabs_never_asks():
     """The login and DDL resolver windows pass tabs=False (modules/webview.py:178,
     :200, :239). They cannot reach a second tab through the UI -- popups load in place
@@ -104,6 +120,7 @@ if __name__ == "__main__":
         "single": test_one_tab_closes_without_asking,
         "veto": test_two_tabs_and_no_keeps_the_window,
         "confirm": test_two_tabs_and_yes_closes,
+        "onebyone": test_closing_tabs_one_by_one_never_asks,
         "chromeless": test_a_window_without_tabs_never_asks,
     }
     # One QApplication per process, so each case runs as its own subprocess

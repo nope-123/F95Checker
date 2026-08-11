@@ -1,7 +1,7 @@
 # Built-in browser: warn before closing a window with tabs open
 
 Date: 2026-08-10
-Status: approved, not yet implemented
+Status: implemented
 
 ## Goal
 
@@ -113,7 +113,8 @@ A real modal spins its own event loop and would hang the run, so each case
 replaces `QtWidgets.QMessageBox.question` with a stub that records the call and
 returns a chosen `StandardButton`. The stub is installed on the `QtWidgets`
 imported by `modules.webview_window`, which is the same module object the test
-imports, and is restored after each case.
+imports, and is never restored: Qt allows one `QApplication` per process, so each
+case already runs as its own subprocess and exits immediately after.
 
 Cases:
 
