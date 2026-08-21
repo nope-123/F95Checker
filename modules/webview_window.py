@@ -629,6 +629,12 @@ class BrowserWindow(QtWidgets.QWidget):
         index = self.tabs.addTab(tab.view, "New tab")
         self.tab_list.insert(index, tab)
         self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
+        # A stacked layout only gives geometry to the tab on screen, so a tab that opens
+        # behind one lays its page out at QWidget's 100x30 default. A post link scrolls
+        # to its anchor at that width, and switching to the tab relayouts a document many
+        # times shorter -- landing you at the end of the thread instead of on the post
+        if (shown := self.tabs.currentWidget()) is not tab.view:
+            tab.view.resize(shown.size())
         if not background:
             self.tabs.setCurrentIndex(index)
             # The chrome attaches to the window before any view does, so without
