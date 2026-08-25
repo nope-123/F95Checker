@@ -946,6 +946,7 @@ async def full_check(game: Game, last_changed: int):
             old_version = version  # Don't include version change in popup for simple parsing adjustments
         else:
             if version != old_version:
+                finished = ""  # New version, no longer finished
                 if not game.archived:
                     updated = True
 
