@@ -562,8 +562,10 @@ class BrowserWindow(QtWidgets.QWidget):
         self.controls.layout().addWidget(self.controls.progress)
 
         # Nav controls act on whichever tab is current
-        b.back.clicked.connect(lambda _=None: self.current_tab.view.back())
-        b.forward.clicked.connect(lambda _=None: self.current_tab.view.forward())
+        # history, not view.back()/forward(): those go through triggerAction, which
+        # silently does nothing here, while the history object navigates for real
+        b.back.clicked.connect(lambda _=None: self.current_tab.view.history.back())
+        b.forward.clicked.connect(lambda _=None: self.current_tab.view.history.forward())
         b.reload.clicked.connect(lambda _=None: self.current_tab.reload())
         b.url.returnPressed.connect(lambda: self.current_tab.load(b.url.text()))
         if extension:
