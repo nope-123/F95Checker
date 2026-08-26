@@ -2298,8 +2298,7 @@ class MainGUI():
                     # the row in a child with an explicit horizontal bar.
                     # Without a child, ImGui clips same-line items at the
                     # popup boundary and the parent only scrolls vertically.
-                    preview_width = max(self.scaled(240), (out_width - imgui.style.item_spacing.x) / 2)
-                    preview_height = preview_width / (16 / 9)
+                    preview_height = self.scaled(200)
                     horizontal_flags = (
                         imgui.WINDOW_HORIZONTAL_SCROLLING_BAR |
                         imgui.WINDOW_ALWAYS_HORIZONTAL_SCROLLBAR |
@@ -2315,11 +2314,16 @@ class MainGUI():
                     for preview in game.preview_images:
                         if not first:
                             imgui.same_line()
+                        if preview.width != 1 or preview.height != 1:
+                            aspect_ratio = preview.width / preview.height
+                        else:
+                            # Most images are 16:9, so use this as placeholder while images are loading
+                            aspect_ratio = 16 / 9
+                        preview_width = preview_height * aspect_ratio
                         if preview.error:
                             self.draw_game_image_error(game, preview, preview_width, preview_height)
                         else:
-                            crop = preview.crop_to_ratio(preview_width / preview_height, fit=globals.settings.fit_images)
-                            preview.render(preview_width, preview_height, *crop, rounding=rounding)
+                            preview.render(preview_width, preview_height, rounding=rounding)
                         first = False
                     imgui.end_child()
             imgui.push_text_wrap_pos()
