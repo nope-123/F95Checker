@@ -3,6 +3,11 @@
   - Opt-in from Settings > Images > Preview images
   - Downloads on-demand only while the game's More Info popup is open, resuming/interrupting as it's opened/closed
   - Caches to disk, which can take a lot of space, so off by default
+- Fullscreen image viewer (by @WillyJL):
+  - From More Info popup, click either on cover image or on a preview image
+  - Image will stay in fullscreen until your next click
+  - Use arrow keys to cycle this game's images
+  - Can also press space to toggle the viewer instead of clicking with mouse
 - Exe launch wrappers (#289 by @cicklolwut & @WillyJL):
   - Allows setting custom arguments and wrapper commands for launching
   - Support for Wine/Proton on Linux/macOS

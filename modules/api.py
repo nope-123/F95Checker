@@ -486,6 +486,43 @@ async def download_webpage(url: str):
     return pathlib.Path(f.name).as_uri()
 
 
+async def download_image(url: str):
+    with images_counter:
+        while True:
+            try:
+                res = await fetch("GET", url, timeout=globals.settings.request_timeout * 4, raise_for_status=True)
+            except aiohttp.ClientResponseError as exc:
+                if exc.status < 400:
+                    raise  # Not error status
+                if url.startswith("https://i.imgur.com"):
+                    url = "blocked"
+                else:
+                    url = "dead"
+                res = b""
+            except aiohttp.ClientConnectorError as exc:
+                # Try alternative F95zone hosts (-1 because we're checking to then use the next link)
+                changed_host = False
+                for host_i in range(len(f95_attachments_hosts) - 1):
+                    if url.startswith(f95_attachments_hosts[host_i]):
+                        url = f95_attachments_hosts[host_i + 1] + url.removeprefix(f95_attachments_hosts[host_i])
+                        changed_host = True
+                        break
+                if changed_host:
+                    continue
+                if not isinstance(exc.os_error, socket.gaierror):
+                    raise  # Not a dead host
+                if is_f95zone_url(url):
+                    raise  # Not a foreign host, raise normal connection error message
+                if (await check_host(f95_domain)) and not (await check_host(get_url_domain(url))):
+                    # Link is actually dead
+                    url = "dead"
+                    res = b""
+                else:
+                    raise  # Foreign host might not actually be dead
+            break  # Loop is only to retry with `continue`
+    return res, url
+
+
 def cleanup_temp_files():
     for item in pathlib.Path(tempfile.gettempdir()).glob(f"{temp_prefix}*"):
         try:
@@ -1017,44 +1054,11 @@ async def full_check(game: Game, last_changed: int):
                 globals.new_updated_games[game.id] = old_game
 
         if fetch_image and thread["image_url"] and thread["image_url"].startswith("http"):
-            with images_counter:
-                image_url = thread["image_url"]
-                while True:
-                    try:
-                        res = await fetch("GET", image_url, timeout=globals.settings.request_timeout * 4, raise_for_status=True)
-                    except aiohttp.ClientResponseError as exc:
-                        if exc.status < 400:
-                            raise  # Not error status
-                        if image_url.startswith("https://i.imgur.com"):
-                            thread["image_url"] = "blocked"
-                        else:
-                            thread["image_url"] = "dead"
-                        res = b""
-                    except aiohttp.ClientConnectorError as exc:
-                        # Try alternative F95zone hosts (-1 because we're checking to then use the next link)
-                        changed_host = False
-                        for host_i in range(len(f95_attachments_hosts) - 1):
-                            if image_url.startswith(f95_attachments_hosts[host_i]):
-                                image_url = f95_attachments_hosts[host_i + 1] + image_url.removeprefix(f95_attachments_hosts[host_i])
-                                changed_host = True
-                                break
-                        if changed_host:
-                            continue
-                        if not isinstance(exc.os_error, socket.gaierror):
-                            raise  # Not a dead host
-                        if is_f95zone_url(image_url):
-                            raise  # Not a foreign host, raise normal connection error message
-                        if (await check_host(f95_domain)) and not (await check_host(get_url_domain(image_url))):
-                            # Link is actually dead
-                            thread["image_url"] = "dead"
-                            res = b""
-                        else:
-                            raise  # Foreign host might not actually be dead
-                    break  # Loop is only to retry with `continue`
-                async def set_image_and_update_game():
-                    await game.set_image_async(res)
-                    await update_game()
-                await asyncio.shield(set_image_and_update_game())
+            data, thread["image_url"] = await download_image(thread["image_url"])
+            async def set_image_and_update_game():
+                await game.set_image_async(data)
+                await update_game()
+            await asyncio.shield(set_image_and_update_game())
         else:
             await asyncio.shield(update_game())
         globals.refresh_progress += 1
