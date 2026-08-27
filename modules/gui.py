@@ -2186,6 +2186,7 @@ class MainGUI():
     def draw_game_info_popup(self, game: Game, carousel_ids: list = None, popup_uuid: str = ""):
         def popup_content():
             # Image
+            fullscreen_viewer_start = False
             imgui.indent(imgui.style.scrollbar_size)
             image = game.image
             avail = imgui.get_content_region_available()
@@ -2220,24 +2221,13 @@ class MainGUI():
                 imgui.set_scroll_x(1.0)
                 imgui.set_cursor_screen_pos(image_pos)
                 image.render(width, height, rounding=rounding)
-                if imgui.is_item_hovered():
-                    # Image popup
-                    if imgui.is_mouse_down():
-                        size = imgui.io.display_size
-                        if aspect_ratio > size.y / size.x:
-                            height = size.y - self.scaled(10)
-                            width = height / aspect_ratio
-                        else:
-                            width = size.x - self.scaled(10)
-                            height = width * aspect_ratio
-                        x = (size.x - width) / 2
-                        y = (size.y - height) / 2
-                        flags = imgui.DRAW_ROUND_CORNERS_ALL
-                        pos2 = (x + width, y + height)
-                        fg_draw_list = imgui.get_foreground_draw_list()
-                        fg_draw_list.add_image_rounded(image.texture_id, (x, y), pos2, rounding=rounding, flags=flags)
-                    # Zoom
-                    elif globals.settings.zoom_enabled:
+                if imgui.is_item_clicked():
+                    # Images popup
+                    fullscreen_viewer_start = True
+                    self.fullscreen_viewer_i = 0
+                elif imgui.is_item_hovered():
+                    if globals.settings.zoom_enabled:
+                        # Zoom
                         if int(imgui.get_scroll_x() - 1.0):
                             if globals.settings.scroll_smooth:
                                 diff = imgui.io.delta_time * self.scroll_energy * 30
@@ -2298,8 +2288,7 @@ class MainGUI():
                     # the row in a child with an explicit horizontal bar.
                     # Without a child, ImGui clips same-line items at the
                     # popup boundary and the parent only scrolls vertically.
-                    preview_width = max(self.scaled(240), (out_width - imgui.style.item_spacing.x) / 2)
-                    preview_height = preview_width / (16 / 9)
+                    preview_height = self.scaled(200)
                     horizontal_flags = (
                         imgui.WINDOW_HORIZONTAL_SCROLLING_BAR |
                         imgui.WINDOW_ALWAYS_HORIZONTAL_SCROLLBAR |
@@ -2312,17 +2301,65 @@ class MainGUI():
                         flags=horizontal_flags,
                     )
                     first = True
-                    for preview in game.preview_images:
+                    for preview_i, preview in enumerate(game.preview_images):
                         if not first:
                             imgui.same_line()
+                        if preview.width != 1 or preview.height != 1:
+                            aspect_ratio = preview.width / preview.height
+                        else:
+                            # Most images are 16:9, so use this as placeholder while images are loading
+                            aspect_ratio = 16 / 9
+                        preview_width = preview_height * aspect_ratio
                         if preview.error:
                             self.draw_game_image_error(game, preview, preview_width, preview_height)
                         else:
-                            crop = preview.crop_to_ratio(preview_width / preview_height, fit=globals.settings.fit_images)
-                            preview.render(preview_width, preview_height, *crop, rounding=rounding)
+                            preview.render(preview_width, preview_height, rounding=rounding)
+                            if imgui.is_item_clicked():
+                                fullscreen_viewer_start = True
+                                self.fullscreen_viewer_i = preview_i + 1
                         first = False
                     imgui.end_child()
             imgui.push_text_wrap_pos()
+
+            # Fullscreen image viewer
+            fullscreen_viewer_id = f"###fullscreen_viewer_{game.id}"
+            fullscreen_viewer_closed = False
+            if imgui.is_key_pressed(glfw.KEY_SPACE) and not imgui.is_popup_open(fullscreen_viewer_id) and imgui.is_topmost() and not imgui.is_any_item_active():
+                fullscreen_viewer_start = True
+                self.fullscreen_viewer_i = 0
+            if fullscreen_viewer_start:
+                imgui.open_popup(fullscreen_viewer_id)
+            if imgui.is_popup_open(fullscreen_viewer_id):
+                size = imgui.io.display_size
+                imgui.set_next_window_position(0, 0)
+                imgui.set_next_window_size(*imgui.io.display_size)
+                imgui.set_next_window_bg_alpha(0.75)
+                imgui.push_style_var(imgui.STYLE_POPUP_BORDERSIZE, 0)
+                if imgui.begin_popup(fullscreen_viewer_id, imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_SCROLL_WITH_MOUSE):
+                    if imgui.is_topmost() and not imgui.is_any_item_active():
+                        if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
+                            self.fullscreen_viewer_i = (self.fullscreen_viewer_i - 1) % (len(game.preview_images) + 1)
+                        if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
+                            self.fullscreen_viewer_i = (self.fullscreen_viewer_i + 1) % (len(game.preview_images) + 1)
+                        if imgui.is_key_pressed(glfw.KEY_ESCAPE) or (imgui.is_key_pressed(glfw.KEY_SPACE) and not fullscreen_viewer_start):
+                            imgui.close_current_popup()
+                            fullscreen_viewer_closed = True
+                    if self.fullscreen_viewer_i:
+                        image = game.preview_images[self.fullscreen_viewer_i - 1]
+                    else:
+                        image = game.image
+                    imgui.set_cursor_pos((0, 0))
+                    if not image.loaded:
+                        # Don't show image but force it to load
+                        _ = image.texture_id
+                    else:
+                        crop = image.crop_to_ratio(size.x / size.y, fit=True)
+                        image.render(*size, *crop)
+                        if imgui.is_item_clicked():
+                            imgui.close_current_popup()
+                            fullscreen_viewer_closed = True
+                    imgui.end_popup()
+                imgui.pop_style_var(1)
 
             imgui.push_font(imgui.fonts.big)
             self.draw_game_name_text(game)
@@ -2872,8 +2909,8 @@ class MainGUI():
                 game.unload_previews()
                 utils.push_popup(self.draw_game_info_popup, globals.games[change_id], carousel_ids).uuid = popup_uuid
                 return True
-            elif utils.close_weak_popup():
-                    return True
+            elif not fullscreen_viewer_closed and utils.close_weak_popup():
+                return True
         if game.id not in globals.games:
             game.cancel_preview_loading()
             game.unload_previews()

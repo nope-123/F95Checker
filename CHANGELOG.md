@@ -3,6 +3,11 @@
   - Opt-in from Settings > Images > Preview images
   - Downloads on-demand only while the game's More Info popup is open, resuming/interrupting as it's opened/closed
   - Caches to disk, which can take a lot of space, so off by default
+- Fullscreen image viewer (by @WillyJL):
+  - From More Info popup, click either on cover image or on a preview image
+  - Image will stay in fullscreen until your next click
+  - Use arrow keys to cycle this game's images
+  - Can also press space to toggle the viewer instead of clicking with mouse
 - Exe launch wrappers (#289 by @cicklolwut & @WillyJL):
   - Allows setting custom arguments and wrapper commands for launching
   - Support for Wine/Proton on Linux/macOS
@@ -15,6 +20,7 @@
 - Locally tracked playtime duration (#290 by @cicklolwut)
 - Label reordering (#291 by @px-pole & WillyJL)
 - Donor DDL downloads can now be retried when failed (by @WillyJL)
+- Option to archive game when thread isn't found (by @WillyJL)
 - Tabs in the integrated browser: opening multiple pages reuses one window instead of spawning a new process each time
 - Find in page in the integrated browser: Ctrl+F, with a match counter and Enter / Shift+Enter to step through matches
 - Warning before closing the integrated browser with more than one tab open

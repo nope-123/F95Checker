@@ -1064,12 +1064,7 @@ class Game:
                 paths = list(preview_dir.glob(glob))
                 if not paths:
                     try:
-                        with api.images_counter:
-                            data = await api.fetch(
-                                "GET", url,
-                                timeout=globals.settings.request_timeout * 4,
-                                raise_for_status=True,
-                            )
+                        data, _ = await api.download_image(url)
                         if data:
                             preview_dir.mkdir(parents=True, exist_ok=True)
                             path = preview_dir / f"{digest}.{utils.image_ext(data)}"
