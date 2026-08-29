@@ -50,7 +50,7 @@
 - Donor DDL downloads can now be aborted correctly when stuck (by @WillyJL)
 - Limit image downloads to 2 per second just in case (by @WillyJL)
 - Fix image downloads in censorship regimes (by @WillyJL)
-- Drastically improved stutters during image compression, most noticable in (what used to be) catastrophic cases with 5-10MB+ GIFs (by @WillyJL)
+- Drastically improved stutters during image compression, most noticeable in (what used to be) catastrophic cases with 5-10MB+ GIFs (by @WillyJL)
 - Fix clipboard access not working in the integrated browser
 
 ### Removed:
