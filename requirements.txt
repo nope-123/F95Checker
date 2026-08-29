@@ -1,14 +1,13 @@
 # OpenGL + glfw
 PyOpenGL==3.1.10
-PyOpenGL-accelerate==3.1.10
 glfw==2.10.2
 
 # Interface stuff
 imgui==2.0.0
 desktop-notifier==6.2.0
 # https://github.com/WillyJL/F95Checker/pull/87
-PyQt6-WebEngine==6.11.0 ; sys_platform != "darwin"
-PyQt6==6.11.0 ; sys_platform != "darwin"
+PyQt6-WebEngine==6.7.0 ; sys_platform != "darwin"
+PyQt6==6.7.1 ; sys_platform != "darwin"
 PyQt6-WebEngine==6.4.0 ; sys_platform == "darwin"
 PyQt6==6.4.2 ; sys_platform == "darwin"
 
