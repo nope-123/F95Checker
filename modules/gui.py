@@ -2199,7 +2199,7 @@ class MainGUI():
             out_height = (min(avail.y, self.scaled(690)) * self.scaled(0.4)) or 1
             out_width = avail.x or 1
             if image.error:
-                self.draw_game_image_error(game, game.image, out_width, out_height)
+                self.draw_game_image_error(game, image, out_width, out_height)
             else:
                 aspect_ratio = image.height / image.width
                 if aspect_ratio > (out_height / out_width):
@@ -2298,6 +2298,13 @@ class MainGUI():
                         height=preview_height + 2 * imgui.style.window_padding.y,
                         flags=horizontal_flags,
                     )
+                    # Prioritize loading cover image
+                    cover_loaded = game.image.error or game.image.texture_id != imagehelper.dummy_texture_id()
+                    if cover_loaded:
+                        # Once cover is loaded, start loading previews in order and keep the loaded
+                        for preview in reversed(game.preview_images):
+                            if preview is not None:
+                                _ = preview.texture_id
                     first = True
                     for preview_i, preview in enumerate(game.preview_images):
                         if not first:
@@ -2313,11 +2320,14 @@ class MainGUI():
                             imgui.dummy(preview_width, preview_height)
                         elif preview.error:
                             self.draw_game_image_error(game, preview, preview_width, preview_height)
+                        elif not cover_loaded:
+                            # Wait for cover image to (start to) be loaded, trying to render previews would prioritize them
+                            imgui.dummy(preview_width, preview_height)
                         else:
                             preview.render(preview_width, preview_height, rounding=rounding)
-                            if imgui.is_item_clicked():
-                                fullscreen_viewer_start = True
-                                self.fullscreen_viewer_i = preview_i + 1
+                        if imgui.is_item_clicked():
+                            fullscreen_viewer_start = True
+                            self.fullscreen_viewer_i = preview_i + 1
                         first = False
                     imgui.end_child()
             imgui.push_text_wrap_pos()
@@ -2351,9 +2361,9 @@ class MainGUI():
                     imgui.set_scroll_y(1.0)
                     if int(imgui.get_scroll_y() - 1.0):
                         if globals.settings.scroll_smooth:
-                            diff = imgui.io.delta_time * self.scroll_energy
+                            diff = imgui.io.delta_time * self.scroll_energy * 4
                         else:
-                            diff = imgui.io.mouse_wheel / 10
+                            diff = imgui.io.mouse_wheel / 2.5
                         self.fullscreen_viewer_zoom = max(self.fullscreen_viewer_zoom + diff, 1.0)
                     if self.fullscreen_viewer_i:
                         image = game.preview_images[self.fullscreen_viewer_i - 1]
@@ -2363,9 +2373,10 @@ class MainGUI():
                     if image is None:
                         # Wait for preview to download
                         imgui.dummy(*size)
-                    elif not image.loaded:
-                        # Don't show image but force it to load
-                        _ = image.texture_id
+                    elif image.error:
+                        self.draw_game_image_error(game, image, *size)
+                    elif image.texture_id == imagehelper.dummy_texture_id():
+                        # Don't show dummy texture which is solid black
                         imgui.dummy(*size)
                     else:
                         crop = image.crop_to_ratio(size.x / size.y, fit=True)
@@ -4632,7 +4643,7 @@ class MainGUI():
 
             draw_settings_label(
                 "Zoom on hover:",
-                "Allow zooming header images inside info popups.\n"
+                "Allow zooming cover images inside info popups.\n"
                 "Tip: hold shift and scroll while hovering the image to change the zoom amount, or hold shift and alt while "
                 "scrolling to change the zoom area."
             )

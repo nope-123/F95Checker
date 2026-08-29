@@ -38,6 +38,9 @@
   - But once enabled and the backlog of existing images are compressed, future image additions/updates in your library will be compressed quicker and unobtrusively
 - Animations (Video and GIF) and Comics (CG, Comics, Manga and Pinup) thread types are detected properly now, "Collection" and "SiteRip" prefixes are now ignored (by @WillyJL)
 - Notes textbox now resizes with how many lines are in the notes, so it is not the textbox that scrolls but rather the info popup (by @WillyJL)
+- Updated dependencies (by @WillyJL):
+  - New cx-Freeze version skips unused PyQt6 .dll/.so/.dylib libraries, Windows/Linux install sizes reduced by 70-100MB
+  - Possibly better Linux support with GLFW and desktop-notifier updates
 
 ### Fixed:
 - Fix window show/hide from other threads and from tray icon (#286 by @cicklolwut & @WillyJL)
@@ -46,7 +49,7 @@
 - Donor DDL downloads can now be aborted correctly when stuck (by @WillyJL)
 - Limit image downloads to 2 per second just in case (by @WillyJL)
 - Fix image downloads in censorship regimes (by @WillyJL)
-- Drastically improved stutters during image loading, most noticable in (what used to be) catastrophic cases with 5-10MB+ GIFs (by @WillyJL)
+- Drastically improved stutters during image compression, most noticable in (what used to be) catastrophic cases with 5-10MB+ GIFs (by @WillyJL)
 - Fix clipboard access not working in the integrated browser
 
 ### Removed:

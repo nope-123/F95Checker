@@ -748,6 +748,7 @@ class ImageHelper:
             return False
 
     def unload(self):
+        sync_thread.unqueue(self.load)
         if self.loaded:
             if self.texture_ids:
                 gl.glDeleteTextures(self.texture_ids)
