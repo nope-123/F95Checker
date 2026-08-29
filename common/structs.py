@@ -891,6 +891,7 @@ class Settings:
     download_manager_arguments  : str
     download_manager_executable : str
     downloads_dir               : dict[Os, str]
+    downloads_extract           : bool
     ext_background_add          : bool
     ext_highlight_tags          : bool
     ext_icon_glow               : bool

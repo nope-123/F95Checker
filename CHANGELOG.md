@@ -22,6 +22,7 @@
 - Label reordering (#291 by @px-pole & WillyJL)
 - Donor DDL downloads can now be retried when failed (by @WillyJL)
 - Option to archive game when thread isn't found (by @WillyJL)
+- Setting to disable Donor DDL extraction, in Settings > Manage > Extract downloads (by @WillyJL)
 - Tabs in the integrated browser: opening multiple pages reuses one window instead of spawning a new process each time
 - Find in page in the integrated browser: Ctrl+F, with a match counter and Enter / Shift+Enter to step through matches
 - Warning before closing the integrated browser with more than one tab open

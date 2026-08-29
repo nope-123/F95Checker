@@ -216,6 +216,7 @@ async def connect():
             "download_manager_arguments":  f'TEXT    DEFAULT "/d {{url}}"',
             "download_manager_executable": f'TEXT    DEFAULT ""',
             "downloads_dir":               f'TEXT    DEFAULT "{{}}"',
+            "downloads_extract":           f'INTEGER DEFAULT {int(True)}',
             "ext_background_add":          f'INTEGER DEFAULT {int(True)}',
             "ext_highlight_tags":          f'INTEGER DEFAULT {int(True)}',
             "ext_icon_glow":               f'INTEGER DEFAULT {int(True)}',

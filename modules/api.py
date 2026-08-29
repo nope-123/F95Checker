@@ -1497,7 +1497,7 @@ async def download_file(download: FileDownload):
                 download.error = f"{download.checksum[0].upper()} checksum mismatch"
                 return
 
-        if archive_format := shutil._find_unpack_format(str(download.path)):
+        if globals.settings.downloads_extract and (archive_format := shutil._find_unpack_format(str(download.path))):
             download.state = download.State.Extracting
             download.extracted = download.path.with_suffix("")
             await asyncio.get_event_loop().run_in_executor(
