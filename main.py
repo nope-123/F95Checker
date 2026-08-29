@@ -29,6 +29,9 @@ def main():
         from modules import blocklist
         async_thread.run(blocklist.ensure_blocklist())
 
+        from external import imagehelper
+        imagehelper.setup()
+
         from modules import gui
         globals.gui = gui.MainGUI()
 

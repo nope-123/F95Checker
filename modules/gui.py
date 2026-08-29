@@ -1005,10 +1005,10 @@ class MainGUI():
                             text = f"Validating {count} cached item{'s' if count > 1 else ''}..."
                         elif globals.last_update_check is None:
                             text = "Checking for updates..."
-                        elif (count := imagehelper.compress_counter) > 0:
-                            text = "Compressing images..." if count == 1 else f"Compressing {count} frames..."
                         elif api.f95_ratelimit_forum._waiters or api.f95_ratelimit_attachments._waiters or api.f95_ratelimit_sleeping.count:
                             text = f"Waiting for F95zone ratelimit..."
+                        elif (count := imagehelper.compress_counter) > 0:
+                            text = "Compressing images..." if count == 1 else f"Compressing {count} frames..."
                         else:
                             text = self.watermark_text
                         _3 = self.scaled(3)
@@ -2276,9 +2276,7 @@ class MainGUI():
             if globals.settings.previews_enabled and game.previews_urls:
                 if not game.previews_loaded and not game.previews_loading:
                     game.preview_load_future = async_thread.run(game.load_previews_async())
-                if (count := imagehelper.compress_counter) > 0:
-                    loading_text = " · Compressing images..." if count == 1 else f" · Compressing {count} frames..."
-                elif game.previews_loading and (count := api.images_counter.count) > 0:
+                if game.previews_loading and (count := api.images_counter.count) > 0:
                     loading_text = f" · Downloading {count} image{'s' if count > 1 else ''}..."
                 else:
                     loading_text = ""
@@ -2304,13 +2302,16 @@ class MainGUI():
                     for preview_i, preview in enumerate(game.preview_images):
                         if not first:
                             imgui.same_line()
-                        if preview.width != 1 or preview.height != 1:
+                        if preview is not None and (preview.width != 1 or preview.height != 1):
                             aspect_ratio = preview.width / preview.height
                         else:
                             # Most images are 16:9, so use this as placeholder while images are loading
                             aspect_ratio = 16 / 9
                         preview_width = preview_height * aspect_ratio
-                        if preview.error:
+                        if preview is None:
+                            # Wait for preview to download
+                            imgui.dummy(preview_width, preview_height)
+                        elif preview.error:
                             self.draw_game_image_error(game, preview, preview_width, preview_height)
                         else:
                             preview.render(preview_width, preview_height, rounding=rounding)
@@ -2328,6 +2329,7 @@ class MainGUI():
                 fullscreen_viewer_start = True
                 self.fullscreen_viewer_i = 0
             if fullscreen_viewer_start:
+                self.fullscreen_viewer_zoom = 1.0
                 imgui.open_popup(fullscreen_viewer_id)
             if imgui.is_popup_open(fullscreen_viewer_id):
                 size = imgui.io.display_size
@@ -2335,29 +2337,48 @@ class MainGUI():
                 imgui.set_next_window_size(*imgui.io.display_size)
                 imgui.set_next_window_bg_alpha(0.75)
                 imgui.push_style_var(imgui.STYLE_POPUP_BORDERSIZE, 0)
-                if imgui.begin_popup(fullscreen_viewer_id, imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_SCROLL_WITH_MOUSE):
+                if imgui.begin_popup(fullscreen_viewer_id, imgui.WINDOW_NO_SCROLLBAR):
                     if imgui.is_topmost() and not imgui.is_any_item_active():
                         if imgui.is_key_pressed(glfw.KEY_LEFT, repeat=True):
                             self.fullscreen_viewer_i = (self.fullscreen_viewer_i - 1) % (len(game.preview_images) + 1)
+                            self.fullscreen_viewer_zoom = 1.0
                         if imgui.is_key_pressed(glfw.KEY_RIGHT, repeat=True):
                             self.fullscreen_viewer_i = (self.fullscreen_viewer_i + 1) % (len(game.preview_images) + 1)
+                            self.fullscreen_viewer_zoom = 1.0
                         if imgui.is_key_pressed(glfw.KEY_ESCAPE) or (imgui.is_key_pressed(glfw.KEY_SPACE) and not fullscreen_viewer_start):
                             imgui.close_current_popup()
                             fullscreen_viewer_closed = True
+                    imgui.set_scroll_y(1.0)
+                    if int(imgui.get_scroll_y() - 1.0):
+                        if globals.settings.scroll_smooth:
+                            diff = imgui.io.delta_time * self.scroll_energy
+                        else:
+                            diff = imgui.io.mouse_wheel / 10
+                        self.fullscreen_viewer_zoom = max(self.fullscreen_viewer_zoom + diff, 1.0)
                     if self.fullscreen_viewer_i:
                         image = game.preview_images[self.fullscreen_viewer_i - 1]
                     else:
                         image = game.image
-                    imgui.set_cursor_pos((0, 0))
-                    if not image.loaded:
+                    imgui.set_cursor_screen_pos((0, 0))
+                    if image is None:
+                        # Wait for preview to download
+                        imgui.dummy(*size)
+                    elif not image.loaded:
                         # Don't show image but force it to load
                         _ = image.texture_id
+                        imgui.dummy(*size)
                     else:
                         crop = image.crop_to_ratio(size.x / size.y, fit=True)
+                        zoom = self.fullscreen_viewer_zoom
+                        mouse_pos = imgui.io.mouse_pos
+                        off_x = utils.map_range(mouse_pos.x, 0.0, size.x, 0.0, 1.0) * (zoom - 1)
+                        off_y = utils.map_range(mouse_pos.y, 0.0, size.y, 0.0, 1.0) * (zoom - 1)
+                        crop = ((crop[0][0] + off_x, crop[0][1] + off_y), (crop[1][0] + off_x, crop[1][1] + off_y))
+                        crop = ((crop[0][0] / zoom, crop[0][1] / zoom), (crop[1][0] / zoom, crop[1][1] / zoom))
                         image.render(*size, *crop)
-                        if imgui.is_item_clicked():
-                            imgui.close_current_popup()
-                            fullscreen_viewer_closed = True
+                    if imgui.is_item_clicked():
+                        imgui.close_current_popup()
+                        fullscreen_viewer_closed = True
                     imgui.end_popup()
                 imgui.pop_style_var(1)
 
