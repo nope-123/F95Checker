@@ -304,7 +304,7 @@ class ImageHelper:
                     sorting = lambda path: 1 if path.name.endswith(".bc7.ktx.zst") else 2 if path.suffix == ".gif" else 3 if not path.name.endswith(".astc.ktx.zst") else 4
                 else:
                     # Prefer .gif files, avoid compressed files unless nothing else available
-                    sorting = lambda path: 1 if path.suffix == ".gif" else 2 if path.suffix == ".zst" else 3
+                    sorting = lambda path: 1 if path.suffix == ".gif" else 2 if path.suffix != ".zst" else 3
                 paths.sort(key=sorting)
                 self._resolved_path = paths[0]
 
@@ -566,6 +566,7 @@ class ImageHelper:
             return
 
         ktx = self._resolved_path.read_bytes()
+        time.sleep(0)
         magic = ktx[0:4]
         if magic != zstd_magic:
             self._load_set_invalid(f"KTX malformed:\nWrong ZSTD magic, {magic} != {zstd_magic}")
@@ -655,6 +656,7 @@ class ImageHelper:
                 self.animated = True
             if not globals.settings.play_gifs:
                 break
+            time.sleep(0)
 
         if self.glob and globals.settings.tex_compress is not TexCompress.Disabled and globals.settings.tex_compress_replace:
             paths = list(self.path.glob(self.glob))
@@ -673,9 +675,11 @@ class ImageHelper:
         # Fallback to RGBA loading
         try:
             image = Image.open(self._resolved_path)
+            image.load()
         except UnidentifiedImageError:
             self._load_set_invalid(f"Pillow does not recognize this image format!")
             return
+        time.sleep(0)
 
         with image:
             self.width, self.height = image.size
@@ -699,6 +703,7 @@ class ImageHelper:
                     self.animated = True
                 if not globals.settings.play_gifs:
                     break
+                time.sleep(0)
 
         self.loaded = True
         self.loading = False
@@ -722,9 +727,11 @@ class ImageHelper:
         # Actually, it helps with dynamically sized layouts: in the case where unload_offscreen_images is on, this keeps the layout from jumping around
 
         if self._resolved_path.name.endswith(".ktx.zst"):
+            print("huh")
             self._load_ktx_zst()
         else:
             self._load_rgba()
+        time.sleep(0)
 
         if self._pending_reload:
             self.reload()
