@@ -252,6 +252,32 @@ def test_download_tab_closes_itself():
     assert seen["url"] == f"http://localhost:{port}/", f"the page lost its place: {seen['url']}"
 
 
+def test_f95zone_attachment_is_downloaded_not_rendered():
+    """F95zone serves attachments inline (a .rpy comes back as text/plain), so the
+    browser would render the file in a tab and the download manager, which only ever
+    hears about a download, would never see it. That host holds files, not pages."""
+    port = serve({
+        "/threads/1": (200, {"Content-Type": "text/html"}, b"<html><body>thread</body></html>"),
+        "/2024/04/patch.rpy": (200, {"Content-Type": "text/plain",
+                                     "Content-Disposition": 'inline; filename="patch.rpy"'}, b"# patch"),
+    })
+    # Both f95zone.to and its attachments subdomain, quoted for the same reason as above
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] += ' --host-resolver-rules="MAP *f95zone.to 127.0.0.1"'
+    app, window = browser()
+    tab = window.new_tab(f"http://f95zone.to:{port}/threads/1")
+    attachment = f"http://attachments.f95zone.to:{port}/2024/04/patch.rpy"
+    seen = {}
+    def downloaded(download):
+        seen["url"] = download.url().url()
+        download.cancel()  # what the handoff does: nothing is written to disk here
+    window.profile.downloadRequested.connect(downloaded)
+    QtCore.QTimer.singleShot(2000, lambda: tab.page.runJavaScript(f"location.href={attachment!r};"))
+
+    urls = tabs_after(app, window, 6000)
+    assert seen.get("url") == attachment, f"the attachment was not handed over as a download: {seen}"
+    assert urls == [f"http://f95zone.to:{port}/threads/1"], f"the tab left the thread: {urls}"
+
+
 if __name__ == "__main__":
     tests = {
         "blocked": test_blocked_host_cannot_take_the_tab,
@@ -261,6 +287,7 @@ if __name__ == "__main__":
         "masked": test_masked_f95zone_link_stays_in_the_tab,
         "popup": test_popup_ad_does_not_keep_its_tab,
         "download": test_download_tab_closes_itself,
+        "attachment": test_f95zone_attachment_is_downloaded_not_rendered,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

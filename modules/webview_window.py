@@ -218,6 +218,16 @@ class WebTab:
             if not self.view.history.count() and len(self.window.tab_list) > 1:
                 self.window.close_tab(self.window.tab_list.index(self))
             return
+        # F95zone serves attachments inline -- a .rpy comes back as text/plain -- so the
+        # browser renders the file in the tab instead of downloading it, and the download
+        # manager never hears about it: the handoff hangs off downloadRequested, which a
+        # rendered page never fires. Nothing on that host is a page, so ask for the file
+        # rather than navigate to it. The tab a target=_blank attachment link opened is
+        # left blank and closes itself from the download handler, like any download tab
+        if url.host().startswith("attachments.f95zone."):
+            request.reject()
+            self.page.download(url)
+            return
         # Ad hosts are registered faster than any blocklist adds them, so the list can
         # only ever be half the answer. The other half is that no page gets to take the
         # tab you are reading: a click that leaves this site opens a background tab
