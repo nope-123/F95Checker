@@ -1409,10 +1409,10 @@ class MainGUI():
                 checkbox = imgui._checkbox
             changed, _ = checkbox(f"{label}###{game.id}_finished", bool(game.finished))
             if changed:
-                if installed_finished:
-                    game.finished = ""  # Finished -> Not finished
+                if game.finished:
+                    game.finished = ""  # Finished / Outdated finished -> Not finished
                 else:
-                    game.finished = (game.installed or game.version)  # Not finished -> Finished, Outdated finished -> Finished
+                    game.finished = (game.installed or game.version)  # Not finished -> Finished
                     game.add_timeline_event(TimelineEventType.GameFinished, game.version)
             if game.finished and not installed_finished and imgui.is_item_hovered():
                 imgui.begin_tooltip()
@@ -1423,7 +1423,7 @@ class MainGUI():
                 imgui.text_disabled("Installed:")
                 imgui.same_line()
                 imgui.text(game.installed or 'N/A')
-                imgui.text("Click to mark installed as finished.")
+                imgui.text("Click to mark as not finished.")
                 imgui.pop_text_wrap_pos()
                 imgui.end_tooltip()
         else:
