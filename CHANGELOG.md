@@ -40,9 +40,11 @@
 - Animations (Video and GIF) and Comics (CG, Comics, Manga and Pinup) thread types are detected properly now, "Collection" and "SiteRip" prefixes are now ignored (by @WillyJL)
 - Notes textbox now resizes with how many lines are in the notes, so it is not the textbox that scrolls but rather the info popup (by @WillyJL)
 - Removing labels now asks for confirmation if Settings > Manage > Confirm when removing is enabled (by @WillyJL)
+- The label remove button now respects Settings > Manage > Show remove button, there is a new option to remove the label in right click menu over the text field (by @WillyJL)
 - Updated dependencies (by @WillyJL):
   - New cx-Freeze version skips unused PyQt6 .dll/.so/.dylib libraries, Windows/Linux install sizes reduced by 70-100MB
   - Possibly better Linux support with GLFW and desktop-notifier updates
+- Make most remaining popups closable by clicking outside the popup (by @WillyJL)
 
 ### Fixed:
 - Fix window show/hide from other threads and from tray icon (#286 by @cicklolwut & @WillyJL)
@@ -51,10 +53,14 @@
 - Donor DDL downloads can now be aborted correctly when stuck (by @WillyJL)
 - Limit image downloads to 2 per second just in case (by @WillyJL)
 - Fix image downloads in censorship regimes (by @WillyJL)
+- Drastically improved stutters during AVIF image loading, most noticeable with 4K images (by @WillyJL)
 - Drastically improved stutters during image compression, most noticeable in (what used to be) catastrophic cases with 5-10MB+ GIFs (by @WillyJL)
 - Pending image loads are cancelled if Settings > Images > Unload off-screen is enabled and image is no longer visible, so visible images can load sooner (by @WillyJL)
 - Fix missing icon on Wayland (#297 by @phubhunter)
 - Handle Cloudflare capcthas as 'F95zone unavailable' warnings (by @WillyJL)
+- Fix RPDL token expiry detection (by @WillyJL)
+- Add link to RPDL browser register page due to captcha/verification seemingly being required now (by @WillyJL)
+- Fix scrollbar not being clickable in multiline text fields (by @WillyJL)
 - Fix clipboard access not working in the integrated browser
 
 ### Removed:
