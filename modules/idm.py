@@ -63,25 +63,6 @@ def _frame(payload: str):
     return header + mask + bytes(c ^ mask[i % 4] for i, c in enumerate(data))
 
 
-def _read_frame(sock, buf: bytearray):
-    while True:
-        if len(buf) >= 2:
-            length, offset = buf[1] & 127, 2
-            if length == 126:
-                length, offset = struct.unpack(">H", buf[2:4])[0], 4
-            elif length == 127:
-                length, offset = struct.unpack(">Q", buf[2:10])[0], 10
-            if buf[1] & 128:  # a server frame is never masked, but do not assume it
-                offset += 4
-            if len(buf) >= offset + length:
-                del buf[:offset + length]
-                return True
-        chunk = sock.recv(65536)
-        if not chunk:
-            return False
-        buf += chunk
-
-
 def send_download(url: str, *, cookies: str = "", referer: str = "",
                   user_agent: str = "", timeout: float = 5.0):
     """Returns True once IDM has been handed the download, False for any failure at
@@ -114,7 +95,10 @@ def send_download(url: str, *, cookies: str = "", referer: str = "",
         sock.sendall(_frame(encode(1, 2, 5, 0, (113, 93, 1031, 0, 16845059, 0, 15, 3), {
             112: "F95Checker", 113: "F95Checker", 116: "en-US", 125: "{}",
         })))
-        if not _read_frame(sock, buf):  # IDM drops downloads sent before it replies
+        # IDM drops a download sent before it has replied to the hello. Nothing here
+        # reads that reply, only waits for it, and it can already be sitting in what
+        # came back with the handshake -- so any bytes at all are the whole answer
+        if not buf and not sock.recv(65536):
             return False
         sock.sendall(_frame(encode(2, 14, 1, 0, (1,), {
             6: url, 7: referer, 50: referer, 8: 4,

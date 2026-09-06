@@ -132,19 +132,18 @@ class WebTab:
         # Attributes stuffed onto the view, kept for the minimal-mode entry points
         self.view.page = self.view.page()
         self.view.history = self.view.page.history()
-        self.view.profile = window.profile
-        self.view.settings = self.view.page.settings()
         self.view.cookieStore = window.profile.cookieStore()
         self.page = self.view.page
 
         WebAttribute = QtWebEngineCore.QWebEngineSettings.WebAttribute
-        self.view.settings.setAttribute(WebAttribute.LocalContentCanAccessFileUrls, True)
-        self.view.settings.setAttribute(WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        self.view.settings.setAttribute(WebAttribute.ScrollAnimatorEnabled, True)
+        settings = self.view.page.settings()
+        settings.setAttribute(WebAttribute.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(WebAttribute.ScrollAnimatorEnabled, True)
         # Both default to False, which silently breaks navigator.clipboard, so
         # forum "copy link" buttons and pasting into the editor do nothing
-        self.view.settings.setAttribute(WebAttribute.JavascriptCanAccessClipboard, True)
-        self.view.settings.setAttribute(WebAttribute.JavascriptCanPaste, True)
+        settings.setAttribute(WebAttribute.JavascriptCanAccessClipboard, True)
+        settings.setAttribute(WebAttribute.JavascriptCanPaste, True)
 
         self.page.setBackgroundColor(window.background_color)
         self.view.loadStarted.connect(self.load_started)
@@ -165,6 +164,7 @@ class WebTab:
             self.view.customContextMenuRequested.connect(self.context_menu)
 
     def new_window_requested(self, request):
+        from modules.blocklist import same_site
         if not self.window.tabs_enabled:
             # The one-shot windows must stay one page: a popup tab there would be
             # invisible and unclosable, and the login and redirect flows watch this
@@ -183,10 +183,15 @@ class WebTab:
         # its place by handing over a file, and an ad popup that only renders a page
         # does not get to sit there. A ctrl or middle click is you asking for the tab by
         # name, and arrives as a background tab request rather than a page's own window
+        # A popup that stays on the site you are on is that site's own flow, not an ad:
+        # ads live on somebody else's domain, that is what makes them ads. Google Drive
+        # opens its "can't scan this file for viruses, download anyway?" page this way,
+        # and probing closed it before anyone could click the button
         from PyQt6 import QtWebEngineCore
         tab.probe = (
             request.destination() is not QtWebEngineCore.QWebEngineNewWindowRequest.DestinationType.InNewBackgroundTab
             and "f95zone.to" not in self.view.url().host()
+            and not same_site(request.requestedUrl().host(), self.view.url().host())
         )
         # openIn() preserves the opener relationship, setUrl() does not
         request.openIn(tab.page)

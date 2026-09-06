@@ -24,14 +24,25 @@ def blocked(host: str, hosts: set[str]):
     return False
 
 
+# Generic second level labels: co.uk and com.au are a registry, not a site, so two
+# names sharing only those last two labels share nothing at all
+GENERIC_2LD = {"co", "com", "net", "org", "edu", "gov", "ac"}
+
+
 def same_site(a: str, b: str):
     # Suffix match rather than a public suffix list: www/cdn/attachments subdomains
     # have to count as the same site, and a real PSL is a second 200KB list to ship
     # and refresh for a question only asked about the page you are already on.
+    # Sibling subdomains count too, and neither is a suffix of the other: Google Drive
+    # sends you from drive.google.com to drive.usercontent.google.com to get the file.
+    # So fall back to the registrable domain, guessed as the last two labels.
     # ponytail: worst case an ad hosted under the same suffix as the page (both on a
     # dyndns domain like us.to) reads as same-site; add a PSL if that shows up
     a, b = a.lower(), b.lower()
-    return a == b or a.endswith("." + b) or b.endswith("." + a)
+    if a == b or a.endswith("." + b) or b.endswith("." + a):
+        return True
+    a, b = a.split("."), b.split(".")
+    return a[-2:] == b[-2:] and a[-2] not in GENERIC_2LD
 
 
 def blocklist_path():

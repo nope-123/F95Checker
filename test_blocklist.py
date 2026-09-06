@@ -62,6 +62,13 @@ def test_same_site():
     assert not same_site("mega.nz", "mega.io")
     # a suffix that is not a label boundary is a different site
     assert not same_site("notf95zone.to", "f95zone.to")
+    # sibling subdomains of one registrable domain, neither a suffix of the other:
+    # this is the hop Google Drive makes to hand over a file
+    assert same_site("drive.usercontent.google.com", "drive.google.com")
+    assert same_site("doc-0s-bs-docs.googleusercontent.com", "googleusercontent.com")
+    # but a registry suffix is not a site: two unrelated .co.uk share only the registry
+    assert not same_site("shop.example.co.uk", "ads.evil.co.uk")
+    assert not same_site("a.example.com", "b.other.com")
 
 
 if __name__ == "__main__":

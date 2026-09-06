@@ -168,13 +168,7 @@ def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, 
     app.exec()
 
 
-def cookies(url: str, *, minimal=True, **kwargs):
-    if minimal:
-        kwargs |= dict(
-            buttons=False,
-            extension=False,
-            private=True,
-        )
+def cookies(url: str, **kwargs):
     app = create(**kwargs | dict(buttons=False, extension=False, private=True, tabs=False))
     url = QtCore.QUrl(url)
     def on_cookie_add(cookie: QtNetwork.QNetworkCookie):
@@ -187,7 +181,10 @@ def cookies(url: str, *, minimal=True, **kwargs):
     app.exec()
 
 
-def css_redirect(url: str, css_selector: str = None, *, minimal=True, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):
+def _click_redirect(url: str, js: str = None, *, minimal=True, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):
+    """A resolver window: open url, click js on every load, and hand back the first url
+    that leaves the host it started on. css_redirect and xpath_redirect are this plus
+    their own one-line click."""
     if minimal:
         kwargs |= dict(
             buttons=False,
@@ -210,65 +207,32 @@ def css_redirect(url: str, css_selector: str = None, *, minimal=True, cookies: d
     def url_changed(new: QtCore.QUrl):
         if new.host() != url.host():
             app.pipe.put(new.url())
-            nonlocal css_selector
-            if css_selector:
-                css_selector = None
+            nonlocal js
+            if js:
+                js = None
                 webview.loadProgress.disconnect(load_progress)
     webview.urlChanged.connect(url_changed)
-    if css_selector:
+    if js:
         def load_progress(_):
-            webview.page.runJavaScript(f"""
-                redirectClickElement = document.querySelector({css_selector!r});
-                if (redirectClickElement) {{
-                    redirectClickElement.click();
-                }}
-            """)
+            webview.page.runJavaScript(js)
         webview.loadProgress.connect(load_progress)
     webview.setUrl(url)
     show_front(app.window)
     app.exec()
 
 
-def xpath_redirect(url: str, xpath_expression: str = None, *, minimal=True, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):
-    if minimal:
-        kwargs |= dict(
-            buttons=False,
-            extension=False,
-            private=True,
-        )
-    app = create(**kwargs | dict(tabs=False))
-    # Bound once, never re-resolved - see css_redirect
-    webview = app.window.webview
-    url = QtCore.QUrl(url)
-    if cookies and cookies_domain:
-        cookies_domain = QtCore.QUrl("https://" + cookies_domain)
-        for key, value in cookies.items():
-            webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
-    def url_changed(new: QtCore.QUrl):
-        if new.host() != url.host():
-            app.pipe.put(new.url())
-            nonlocal xpath_expression
-            if xpath_expression:
-                xpath_expression = None
-                webview.loadProgress.disconnect(load_progress)
-    webview.urlChanged.connect(url_changed)
-    if xpath_expression:
-        if index_match := re.search(r"\[(\d+)\]$", xpath_expression):
-            xpath_index = int(index_match.group(1)) - 1
-            xpath_expression = xpath_expression[:index_match.start()]
-        else:
-            xpath_index = 0
-        def load_progress(_):
-            webview.page.runJavaScript(f"""
-                redirectClickElements = document.evaluate({xpath_expression!r}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                if (redirectClickElements) {{
-                    redirectClickElement = redirectClickElements.snapshotItem({xpath_index})
-                    if (redirectClickElement) {{
-                        redirectClickElement.click();
-                    }}
-                }}
-            """)
-        webview.loadProgress.connect(load_progress)
-    webview.setUrl(url)
-    show_front(app.window)
-    app.exec()
+def css_redirect(url: str, css_selector: str = None, **kwargs):
+    _click_redirect(url, css_selector and f"document.querySelector({css_selector!r})?.click();", **kwargs)
+
+
+def xpath_redirect(url: str, xpath_expression: str = None, **kwargs):
+    # A trailing [n] is an xpath index, but evaluate() returns the whole node set, so
+    # strip it off the expression and pick that item out of the snapshot instead
+    index = 0
+    if xpath_expression and (match := re.search(r"\[(\d+)\]$", xpath_expression)):
+        index = int(match.group(1)) - 1
+        xpath_expression = xpath_expression[:match.start()]
+    _click_redirect(url, xpath_expression and (
+        f"document.evaluate({xpath_expression!r}, document, null,"
+        f" XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem({index})?.click();"
+    ), **kwargs)

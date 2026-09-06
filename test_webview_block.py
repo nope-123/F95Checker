@@ -205,6 +205,33 @@ def test_popup_ad_does_not_keep_its_tab():
     assert urls == [f"http://localhost:{port}/page"], f"a popup ad kept its tab: {urls}"
 
 
+def test_same_site_popup_keeps_its_confirmation_page():
+    """Not every popup is an ad. A host that puts a confirmation page in front of the
+    file opens it exactly the way an ad opens itself -- Google Drive's "can't scan this
+    file for viruses, download anyway?" page arrives as a popup on
+    drive.usercontent.google.com while the page you clicked is drive.google.com. A
+    sibling host, not a stranger, and closing it as an ad leaves no way to the file."""
+    port = serve({
+        "/page": (200, {"Content-Type": "text/html"}, (
+            b"<html><body>page<script>setTimeout(function(){"
+            b"window.open('http://files.example.com:'+location.port+'/confirm');"
+            b"}, 300)</script></body></html>")),
+        "/confirm": (200, {"Content-Type": "text/html"}, (
+            b"<html><body><form action='/file.bin'>"
+            b"<input type='submit' value='Download anyway'></form></body></html>")),
+    })
+    # Quoted, or Qt splits the env var on the spaces inside the rule and drops it
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] +=         ' --host-resolver-rules="MAP *example.com 127.0.0.1"'
+    app, window = browser()
+    window.new_tab(f"http://drive.example.com:{port}/page")
+
+    urls = tabs_after(app, window, 6000)
+    assert urls == [
+        f"http://drive.example.com:{port}/page",
+        f"http://files.example.com:{port}/confirm",
+    ], f"the confirmation page was closed as an ad: {urls}"
+
+
 def test_download_tab_closes_itself():
     """The rest of the flow a download host puts you through: the file is on another
     host, so the link landed in its own tab (the case above) -- and that tab must not be
@@ -286,6 +313,7 @@ if __name__ == "__main__":
         "redirect": test_redirect_cannot_take_the_tab,
         "masked": test_masked_f95zone_link_stays_in_the_tab,
         "popup": test_popup_ad_does_not_keep_its_tab,
+        "confirm": test_same_site_popup_keeps_its_confirmation_page,
         "download": test_download_tab_closes_itself,
         "attachment": test_f95zone_attachment_is_downloaded_not_rendered,
     }
