@@ -740,7 +740,7 @@ def remove_game(*games: list[Game], bypass_confirm=False):
         remove_callback()
 
 
-async def add_games(*threads: list[ThreadMatch | SearchResult]):
+async def add_games(*threads: list[ThreadMatch | SearchResult], force_summary=False, open_duplicate=False):
     if not threads:
         return
     async def _add_games():
@@ -760,7 +760,9 @@ async def add_games(*threads: list[ThreadMatch | SearchResult]):
                 add_game_exe(game)
         dupe_count = len(dupes)
         added_count = len(added)
-        if dupe_count > 0 or added_count > 1:
+        if open_duplicate and dupe_count == 1 and added_count == 0:
+            utils.push_popup(globals.gui.draw_game_info_popup, globals.games[threads[0].id], None)
+        elif force_summary or dupe_count > 0 or added_count > 1:
             utils.push_popup(
                 msgbox.msgbox, f"{'Duplicate' if dupe_count > 0 else 'Added'} games",
                 (

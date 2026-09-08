@@ -45,6 +45,8 @@
   - New cx-Freeze version skips unused PyQt6 .dll/.so/.dylib libraries, Windows/Linux install sizes reduced by 70-100MB
   - Possibly better Linux support with GLFW and desktop-notifier updates
 - Make most remaining popups closable by clicking outside the popup (by @WillyJL)
+- Adding a duplicate game via the bottom add/search bar will show its More Info popup instead of a duplicate warning (by @WillyJL)
+- Bulk game import actions will show a summary even if just 1 game was added instead of adding silently (by @WillyJL)
 
 ### Fixed:
 - Fix window show/hide from other threads and from tray icon (#286 by @cicklolwut & @WillyJL)

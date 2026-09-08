@@ -4147,7 +4147,7 @@ class MainGUI():
         if self.add_box_valid:
             imgui.same_line()
             if imgui.button("Add!") or activated:
-                async_thread.run(callbacks.add_games(*utils.extract_thread_matches(self.add_box_text)))
+                async_thread.run(callbacks.add_games(*utils.extract_thread_matches(self.add_box_text), open_duplicate=True))
                 self.add_box_text = ""
                 self.add_box_valid = False
                 self.recalculate_ids = True
@@ -5066,7 +5066,7 @@ class MainGUI():
                             utils.text_context(thread_links, "_", no_icons=True)
                             imgui.end_popup()
                     buttons={
-                        f"{icons.check} Import": lambda: async_thread.run(callbacks.add_games(*utils.extract_thread_matches(thread_links._))),
+                        f"{icons.check} Import": lambda: async_thread.run(callbacks.add_games(*utils.extract_thread_matches(thread_links._), force_summary=True)),
                         f"{icons.cancel} Cancel": None
                     }
                     utils.push_popup(

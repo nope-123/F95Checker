@@ -735,7 +735,7 @@ async def import_browser_bookmarks(file: str | pathlib.Path):
     for bookmark in html.find_all(lambda elem: "href" in getattr(elem, "attrs", "")):
         threads += utils.extract_thread_matches(bookmark.get("href"))
     if threads:
-        await callbacks.add_games(*threads)
+        await callbacks.add_games(*threads, force_summary=True)
     else:
         utils.push_popup(
             msgbox.msgbox, "No threads",
@@ -764,7 +764,7 @@ async def import_f95_bookmarks():
         for title in bookmarks.find_all(parser.is_class("contentRow-title")):
             threads += utils.extract_thread_matches(title.find("a").get("href"))
     if threads:
-        await callbacks.add_games(*threads)
+        await callbacks.add_games(*threads, force_summary=True)
     else:
         utils.push_popup(
             msgbox.msgbox, "No threads",
@@ -793,7 +793,7 @@ async def import_f95_watched_threads():
         for title in watched.find_all(parser.is_class("structItem-title")):
             threads += utils.extract_thread_matches(title.get("uix-data-href"))
     if threads:
-        await callbacks.add_games(*threads)
+        await callbacks.add_games(*threads, force_summary=True)
     else:
         utils.push_popup(
             msgbox.msgbox, "No threads",
