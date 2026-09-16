@@ -122,11 +122,13 @@ def add_game_exe(game: Game, callback: typing.Callable = None):
         picker.dir_picker = False
         picker.buttons = [use_uri, use_dir]
         picker.active = True
+        picker.selected = None
         utils.push_popup(picker.tick)
     def switch_to_dir_picker():
         picker.dir_picker = True
         picker.buttons = [use_uri, use_file]
         picker.active = True
+        picker.selected = None
         utils.push_popup(picker.tick)
     def select_callback(selected):
         if selected == use_uri:
@@ -165,14 +167,14 @@ def add_game_exe(game: Game, callback: typing.Callable = None):
         for subdir, best_partial_match in try_subdirs:
             start_dir = _fuzzy_match_subdir(start_dir, subdir, best_partial_match)
     if game.type.category in (Category.Animations, Category.Comics):
-        picker = filepicker.FilePicker(
+        picker = filepicker.DirPicker(
             title=f"Select or drop executable for {game.name}",
             start_dir=start_dir,
             callback=select_callback,
-            buttons=[use_uri, use_dir]
+            buttons=[use_uri, use_file]
         )
     else:
-        picker = filepicker.DirPicker(
+        picker = filepicker.FilePicker(
             title=f"Select or drop executable for {game.name}",
             start_dir=start_dir,
             callback=select_callback,
