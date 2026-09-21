@@ -7,9 +7,6 @@ on:
     types:
       - "published"
 
-permissions:
-  contents: write  # Upload release assets and rewrite the release body
-
 jobs:
 
   build:
