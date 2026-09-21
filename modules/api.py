@@ -1158,12 +1158,12 @@ async def check_upstream():
     # Ask GitHub how far behind upstream our fork is, compare commits come oldest first
     res = json.loads(await fetch("GET", upstream_compare_endpoint, headers={"Accept": "application/vnd.github+json"}))
     globals.last_update_check = time.time()
-    if not res["ahead_by"]:
+    if not (ahead := res["ahead_by"]):
         return
     subjects = [commit["commit"]["message"].split("\n")[0] for commit in res["commits"][:10]]
     utils.push_popup(
         msgbox.msgbox, "Upstream commits",
-        f"{res['ahead_by']} commit(s) in WillyJL/F95Checker to incorporate:\n"
+        f"{ahead} new commit{'' if ahead == 1 else 's'} in WillyJL/F95Checker, not in this fork yet:\n"
         + "\n".join(f"- {subject}" for subject in subjects),
         MsgBox.info,
         buttons={
@@ -1174,8 +1174,10 @@ async def check_upstream():
 
 
 async def check_updates():
+    with contextlib.suppress(Exception):
+        await check_upstream()  # Never let this get in the way of the actual update check
     if (globals.self_path / ".git").is_dir():
-        return await check_upstream()  # Running from git repo, check what upstream has instead
+        return  # Running from git repo, skip update
     res = None
     try:
         res = await fetch("GET", app_update_endpoint, headers={"Accept": "application/vnd.github+json"})
