@@ -352,6 +352,10 @@ class MainGUI():
         self.bg_mode_notifs_timer: float = None
         self.sorts: dict[str, list[SortSpec]] = {}
         self.show_games_ids: dict[Tab, list[int]] = {}
+        self.prev_sorted_ids: dict[int, int] = {}
+        self.scroll_anchor: tuple[int, float] = None
+        self.restore_anchor: tuple[int, float] = None
+        self.reordered = False
 
         # Setup Qt objects
         self.qt_app = QtWidgets.QApplication(sys.argv)
@@ -3290,6 +3294,7 @@ class MainGUI():
 
     def calculate_ids(self, table_id: str, sorts: imgui.core._ImGuiTableSortSpecs):
         manual_sort = cols.manual_sort.enabled
+        sorts_changed = False
         if manual_sort != self.prev_manual_sort:
             self.prev_manual_sort = manual_sort
             self.recalculate_ids = True
@@ -3297,6 +3302,7 @@ class MainGUI():
             self.prev_filters = self.filters.copy()
             self.recalculate_ids = True
         if sorts.specs_dirty:
+            sorts_changed = True
             new_sorts = []
             for sort_spec in sorts.specs:
                 new_sorts.insert(0, SortSpec(index=sort_spec.column_index, reverse=bool(sort_spec.sort_direction - 1)))
@@ -3415,7 +3421,14 @@ class MainGUI():
                     base_ids.sort(key=key, reverse=sort_spec.reverse)
                 base_ids.sort(key=lambda id: globals.games[id].archived)
                 base_ids.sort(key=lambda id: globals.games[id].type is not Type.Unchecked)
+                # Keep the order from before a refresh started, it resorts once the refresh ends
+                order = self.prev_sorted_ids
+                if globals.refresh_task and not sorts_changed and len(order) == len(base_ids):
+                    base_ids.sort(key=lambda id: order.get(id, -1))
+                else:
+                    self.prev_sorted_ids = {id: i for i, id in enumerate(base_ids)}
             # Loop all tabs and filter by them
+            prev_tab_ids = self.show_games_ids.get(self.current_tab)
             self.show_games_ids = {
                 tab: (
                     base_ids if filtering and globals.settings.filter_all_tabs else
@@ -3424,6 +3437,8 @@ class MainGUI():
                 for tab in (None, *Tab.instances)
             }
             tab_games_ids = self.show_games_ids[self.current_tab]
+            if tab_games_ids != prev_tab_ids:
+                self.reordered = True
             # Deselect things that arent't visible anymore
             for game in globals.games.values():
                 if game.selected and game.id not in tab_games_ids:
@@ -3490,12 +3505,26 @@ class MainGUI():
             imgui.end_popup()
 
     def sync_scroll(self):
+        # Scroll anchoring: when the ids got reordered, the item that was topmost last frame
+        # is put back under the cursor, instead of letting the list jump under the user
+        self.restore_anchor = self.scroll_anchor if self.reordered else None
+        self.scroll_anchor = None  # Picked again below, unless restoring
+        self.reordered = False
         if (scroll_max_y := imgui.get_scroll_max_y()) > 1.0:
             if self.switched_display_mode:
                 imgui.set_scroll_y(self.scroll_percent * scroll_max_y)
                 self.switched_display_mode = False
             else:
                 self.scroll_percent = imgui.get_scroll_y() / scroll_max_y
+
+    def track_scroll_anchor(self, id: int, visible: bool):
+        # Called for every row/cell in order, see sync_scroll()
+        if self.restore_anchor:
+            if id == self.restore_anchor[0]:
+                imgui.set_scroll_y(imgui.get_cursor_pos_y() - self.restore_anchor[1])
+                self.scroll_anchor, self.restore_anchor = self.restore_anchor, None
+        elif self.scroll_anchor is None and visible:
+            self.scroll_anchor = (id, imgui.get_cursor_pos_y() - imgui.get_scroll_y())
 
     def games_table_id(self):
         tab_id = self.current_tab.id if self.current_tab else -1
@@ -3545,7 +3574,8 @@ class MainGUI():
                 imgui.table_next_row()
                 imgui.table_set_column_index(cols.separator.index)
                 # Skip if outside view
-                if not imgui.is_rect_visible(imgui.io.display_size.x, frame_height):
+                self.track_scroll_anchor(id, visible := imgui.is_rect_visible(imgui.io.display_size.x, frame_height))
+                if not visible:
                     imgui.dummy(0, frame_height)
                     continue
                 # Base row height with a buttom to align the following text calls to center vertically
@@ -3991,6 +4021,7 @@ class MainGUI():
             for id in self.show_games_ids[self.current_tab]:
                 game = globals.games[id]
                 imgui.table_next_column()
+                self.track_scroll_anchor(id, imgui.is_rect_visible(cell_width, img_height))
                 self.draw_game_cell(game, True, draw_list, cell_width, expand, img_height, cell_config)
 
             imgui.end_table()
@@ -4024,6 +4055,7 @@ class MainGUI():
                 imgui.table_setup_column(label.name, imgui.TABLE_COLUMN_WIDTH_STRETCH)
             imgui.table_setup_column("Not Labelled", imgui.TABLE_COLUMN_WIDTH_STRETCH)
             tab_games_ids = self.show_games_ids[self.current_tab]
+            self.reordered = False  # Kanban scrolls per column, no anchoring here
 
             # Column headers
             imgui.table_setup_scroll_freeze(0, 1)  # Sticky column headers
