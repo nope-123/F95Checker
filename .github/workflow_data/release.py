@@ -1,11 +1,19 @@
 import requests
 import json
 import os
+import subprocess
 
 
 if __name__ == "__main__":
     with open("CHANGELOG-fork.md") as f:
         changelog = f.read()
+    # Whatever upstream added to its own changelog since the previous release came in with a
+    # merge in this range, so it ships here and never again. Needs fetch-depth 0 in build.yml
+    git = lambda *args: subprocess.run(("git", *args), capture_output=True, text=True).stdout
+    if previous := git("describe", "--tags", "--abbrev=0", "HEAD^").strip():
+        diff = git("diff", f"{previous}..HEAD", "--", "CHANGELOG.md").splitlines()
+        if added := [line[1:] for line in diff if line.startswith("+") and not line.startswith("+++")]:
+            changelog += "\n### From upstream:\n" + "\n".join(added) + "\n"
     with open(os.environ["GITHUB_EVENT_PATH"]) as f:
         event = json.load(f)
     print(f"event = {json.dumps(event, indent=4)}")
