@@ -15,7 +15,7 @@
 - F95zone attachments are downloaded instead of being rendered as a page
 
 ### Updated:
-- Updates are checked against this fork's releases; running from a git checkout instead reports how many commits upstream has to incorporate
+- Updates are checked against this fork's releases, and every update check also lists new commits in WillyJL/F95Checker that this fork does not have yet
 - An updated game keeps its half-checked "outdated finished" mark, and clicking it now clears the mark instead of re-finishing at the new version
 
 ### Fixed:
