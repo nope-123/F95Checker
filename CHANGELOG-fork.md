@@ -1,2 +1,2 @@
 ### Updated:
-- Every update check now also lists new commits in WillyJL/F95Checker that this fork does not have yet, instead of only doing so when running from a git checkout
+- Release notes now list what each release brings in from WillyJL/F95Checker, under its own section and keeping upstream's own grouping
