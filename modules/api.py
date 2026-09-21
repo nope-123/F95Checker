@@ -118,7 +118,8 @@ api_fast_check_url = api_host + "/fast?ids={ids}"
 api_full_check_url = api_host + "/full/{id}?ts={ts}"
 api_fast_check_max_ids = 10
 
-app_update_endpoint = "https://api.github.com/repos/WillyJL/F95Checker/releases/latest"
+app_update_endpoint = "https://api.github.com/repos/nope-123/F95Checker/releases/latest"
+upstream_compare_endpoint = "https://api.github.com/repos/nope-123/F95Checker/compare/main...WillyJL:main"
 
 insecure_ssl_allowed_hosts = (
     f95_attachments_host_ninja,  # Invalid SSL cert but still works and is ran by F95zone
@@ -1153,9 +1154,28 @@ async def check_notifs(standalone=True, retry=False):
         )
 
 
+async def check_upstream():
+    # Ask GitHub how far behind upstream our fork is, compare commits come oldest first
+    res = json.loads(await fetch("GET", upstream_compare_endpoint, headers={"Accept": "application/vnd.github+json"}))
+    globals.last_update_check = time.time()
+    if not res["ahead_by"]:
+        return
+    subjects = [commit["commit"]["message"].split("\n")[0] for commit in res["commits"][:10]]
+    utils.push_popup(
+        msgbox.msgbox, "Upstream commits",
+        f"{res['ahead_by']} commit(s) in WillyJL/F95Checker to incorporate:\n"
+        + "\n".join(f"- {subject}" for subject in subjects),
+        MsgBox.info,
+        buttons={
+            f"{icons.open_in_new} Compare": lambda: callbacks.open_webpage(res["html_url"]),
+            f"{icons.check} OK": None,
+        },
+    )
+
+
 async def check_updates():
     if (globals.self_path / ".git").is_dir():
-        return  # Running from git repo, skip update
+        return await check_upstream()  # Running from git repo, check what upstream has instead
     res = None
     try:
         res = await fetch("GET", app_update_endpoint, headers={"Accept": "application/vnd.github+json"})
