@@ -12,8 +12,22 @@ if __name__ == "__main__":
     git = lambda *args: subprocess.run(("git", *args), capture_output=True, text=True).stdout
     if previous := git("describe", "--tags", "--abbrev=0", "HEAD^").strip():
         diff = git("diff", f"{previous}..HEAD", "--", "CHANGELOG.md").splitlines()
-        if added := [line[1:] for line in diff if line.startswith("+") and not line.startswith("+++")]:
-            changelog += "\n### From upstream:\n" + "\n".join(added) + "\n"
+        added = {line[1:] for line in diff if line.startswith("+") and not line.startswith("+++")}
+        # Walk the file rather than the diff, so the entries keep upstream's own
+        # Added/Updated/Fixed grouping and order, and a heading only shows if it has entries
+        upstream = ""
+        heading = None
+        with open("CHANGELOG.md") as f:
+            for line in f.read().splitlines():
+                if line.startswith("###"):
+                    heading = line
+                elif line in added:
+                    if heading:
+                        upstream += f"\n{heading}\n"
+                        heading = None
+                    upstream += f"{line}\n"
+        if upstream:
+            changelog += "\n## ⬆️ From upstream\n" + upstream.lstrip("\n")
     with open(os.environ["GITHUB_EVENT_PATH"]) as f:
         event = json.load(f)
     print(f"event = {json.dumps(event, indent=4)}")
