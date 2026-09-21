@@ -25,8 +25,7 @@ if __name__ == "__main__":
         for asset in release["assets"]:
             if asset_type.lower() in asset["name"].lower():
                 asset_url = asset["browser_download_url"]
-                asset_hash = (asset.get("digest") or "").removeprefix("sha256:")
-        body += f">### [{asset_type} {asset_icon}]({asset_url}) ([VirusTotal](https://www.virustotal.com/gui/file/{asset_hash}))\n\n"
+        body += f">### [{asset_type} {asset_icon}]({asset_url}) ([VirusTotal](https://www.virustotal.com/gui/file/))\n\n"
     body += (
         "## ❤️ Support\n" +
         "F95Checker is **Free and Open Source Software**, provided to you **free of cost**. However it is actively **developed by " +
