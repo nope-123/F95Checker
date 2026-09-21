@@ -6,6 +6,8 @@ import os
 if __name__ == "__main__":
     with open("CHANGELOG.md") as f:
         changelog = f.read()
+    with open("CHANGELOG-fork.md") as f:
+        changelog = f.read() + "\n\n## ⬆️ From upstream\n" + changelog
     with open(os.environ["GITHUB_EVENT_PATH"]) as f:
         event = json.load(f)
     print(f"event = {json.dumps(event, indent=4)}")
