@@ -332,7 +332,7 @@ def test_right_click_menu_holds_the_toggle():
     QtWidgets.QMenu.exec = lambda self, *_: menus.append(self)
     bar = window.tabs.tabBar()
     bar.customContextMenuRequested.emit(bar.tabRect(0).center())
-    assert [a.text() for a in menus[-1].actions()] == ["Turn on vertical tabs"], menus[-1].actions()
+    assert menus[-1].actions()[0].text() == "Turn on vertical tabs", menus[-1].actions()[0].text()
     menus[-1].actions()[0].trigger()
     assert window.vertical, "the top strip's menu did not turn vertical tabs on"
     view = window.sidebar.list.viewport()
@@ -340,7 +340,7 @@ def test_right_click_menu_holds_the_toggle():
     QtWidgets.QApplication.sendEvent(view, QtGui.QContextMenuEvent(
         QtGui.QContextMenuEvent.Reason.Mouse, pos, view.mapToGlobal(pos),
     ))
-    assert [a.text() for a in menus[-1].actions()] == ["Turn off vertical tabs"], menus[-1].actions()
+    assert menus[-1].actions()[0].text() == "Turn off vertical tabs", menus[-1].actions()[0].text()
     menus[-1].actions()[0].trigger()
     assert not window.vertical, "the sidebar's menu did not turn vertical tabs off"
 

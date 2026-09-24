@@ -342,6 +342,7 @@ class WebTab:
         if self.is_current:
             self.window.set_url_text(url.url())
         self.window.sidebar.refresh()  # the row's tooltip, and what search matches
+        self.window.save_session()
 
     def title_changed(self, title: str):
         self.window.tab_title_changed(self, title)
@@ -699,6 +700,10 @@ class BrowserWindow(QtWidgets.QWidget):
             QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope,
             "f95checker", "browser",
         )
+        # The tabs are saved as they change and brought back by the next window. Not in
+        # a private window, which would be writing its history to disk, nor a one-page one
+        self.keeps_session = buttons and tabs and not private
+        self.closed = []  # (index, urls), newest last, for Ctrl+Shift+T
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
         self.cookies = CookieJar(self.profile.cookieStore(), self)
 
@@ -781,6 +786,7 @@ class BrowserWindow(QtWidgets.QWidget):
         )
         # Connected second, so it runs once tab_list is already back in step
         self.tabs.tabBar().tabMoved.connect(lambda _, __: self.sidebar.refresh())
+        self.tabs.tabBar().tabMoved.connect(lambda _, __: self.save_session())
         # Window resize reaches the tab widget; the tab bar appearing or going away
         # does not, and it moves the page area under the bar
         self.tabs.installEventFilter(self)
@@ -793,6 +799,7 @@ class BrowserWindow(QtWidgets.QWidget):
                 ("Ctrl+Tab", self.next_tab),
                 ("Ctrl+Shift+,", self.toggle_vertical),  # Edge's
                 ("Ctrl+Shift+A", self.sidebar.focus_search),  # Chrome's tab search
+                ("Ctrl+Shift+T", self.reopen_closed),
             ):
                 QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(handler)
             bar = self.tabs.tabBar()
@@ -891,7 +898,7 @@ class BrowserWindow(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
     def open_dropped(self, urls: list[QtCore.QUrl], to: int):
-        """Links dropped on either strip, each a new tab from index `to` on"""
+        """Links dropped on either strip, or reopened, each a new tab from index `to` on"""
         for url in urls:
             tab = self.new_tab(url.toString())
             # tabMoved keeps tab_list in step, same as a drag
@@ -921,10 +928,20 @@ class BrowserWindow(QtWidgets.QWidget):
         return "Turn off vertical tabs" if self.vertical else "Turn on vertical tabs"
 
     def show_tab_menu(self, pos: QtCore.QPoint):
-        """Right-click on either strip. Holds only the layout toggle: the page keeps its
+        """Right-click on either strip. Only what acts on the tabs: the page keeps its
         own menu, and this one is not a second place to find it"""
         menu = QtWidgets.QMenu(self)
         menu.addAction(self.vertical_label).triggered.connect(lambda _=None: self.toggle_vertical())
+        # The key only as text: a real shortcut on the action would clash with the
+        # window's own while the menu is up
+        reopen = menu.addAction("Reopen closed tab	Ctrl+Shift+T")
+        reopen.setEnabled(bool(self.closed))
+        reopen.triggered.connect(lambda _=None: self.reopen_closed())
+        startup = menu.addAction("Reopen tabs on startup")
+        startup.setCheckable(True)
+        startup.setChecked(self.settings.value("restore_tabs", True, type=bool))
+        startup.setEnabled(self.keeps_session)
+        startup.toggled.connect(lambda on: self.settings.setValue("restore_tabs", on))
         menu.exec(pos)
         menu.deleteLater()
 
@@ -934,6 +951,12 @@ class BrowserWindow(QtWidgets.QWidget):
             return
         tab = self.tab_list.pop(index)
         self.tabs.removeTab(index)
+        # Only a tab that got a page of its own. The ones the browser closes by itself
+        # never did -- an ad popup, a tab that only started a download -- or are a probe,
+        # an off-site redirect that rendered a page instead of handing over a file
+        if tab.view.history.count() and not tab.probe:
+            self.closed.append((index, [tab.view.url().toString()]))
+        self.save_session()
         # removeTab only hides the view and leaves it parented to the tab widget,
         # so deleting just the page would leak the view and leave it holding a
         # dangling page. The page is a child of the view, so the view takes both.
@@ -942,6 +965,33 @@ class BrowserWindow(QtWidgets.QWidget):
         # Removing a tab in front of the current one moves no current tab, so nothing
         # else would redraw
         self.sidebar.refresh()
+
+    def save_session(self):
+        if self.keeps_session:
+            # Written on every change, not on close: quitting the main app kills this
+            # process outright, and it never gets to close
+            urls = [url for tab in self.tab_list if (url := tab.view.url().toString()) not in ("", "about:blank")]
+            self.settings.setValue("session", json.dumps(urls))
+
+    def restore_session(self):
+        """The tabs the last window had open, read before this one saves over them.
+        With reopening on startup turned off they wait for Ctrl+Shift+T instead"""
+        if not self.keeps_session:
+            return
+        urls = json.loads(self.settings.value("session", "[]"))
+        if urls and self.settings.value("restore_tabs", True, type=bool):
+            for url in urls:
+                self.new_tab(url, background=True)
+        elif urls:
+            self.closed.append((None, urls))  # None: after every tab, not at a position
+
+    def reopen_closed(self):
+        if not self.closed:
+            return
+        index, urls = self.closed.pop()
+        # Back where it was, or as near as the tabs closed since allow
+        to = len(self.tab_list) if index is None else min(index, len(self.tab_list))
+        self.open_dropped([QtCore.QUrl(url) for url in urls], to)
 
     def close_download_tab(self, download):
         # A download link that points off site now gets a tab of its own (see
@@ -1288,5 +1338,7 @@ def create(
         }}
     """)
 
+    # Before the clicked link's tab, so that one is last and the one shown
+    app.window.restore_session()
     app.window.new_tab()
     return app
