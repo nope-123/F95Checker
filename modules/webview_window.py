@@ -517,6 +517,7 @@ class TabSidebar(QtWidgets.QWidget):
     def __init__(self, window: "BrowserWindow"):
         super().__init__(window)
         self.window = window
+        self.drag_row = None  # the row a left press landed on, until the release
         self.setLayout(QtWidgets.QVBoxLayout(self))
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)
@@ -525,12 +526,24 @@ class TabSidebar(QtWidgets.QWidget):
         self.search.setClearButtonEnabled(True)
         self.list = QtWidgets.QListWidget(self)
         self.list.setUniformItemSizes(True)
+        self.list.setMouseTracking(True)  # hovering a row moves the close button onto it
+        self.list.viewport().setAcceptDrops(True)
         self.layout().addWidget(self.search)
         self.layout().addWidget(self.list)
+        # One close button moved to whichever row is hovered: a widget per row would
+        # have to be rebuilt on every redraw
+        self.closer = QtWidgets.QToolButton(self.list.viewport())
+        self.closer.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TabCloseButton))
+        self.closer.setAutoRaise(True)
+        self.closer.row = -1
+        self.closer.hide()
 
+        self.closer.clicked.connect(lambda _=None: self.window.close_tab(self.closer.row))
         self.list.currentRowChanged.connect(self.row_changed)
         self.search.textChanged.connect(lambda _: self.refresh())
         self.search.installEventFilter(self)
+        # The viewport, not the list: an item view gets its mouse and drop events there
+        self.list.viewport().installEventFilter(self)
 
     @property
     def query(self):
@@ -540,6 +553,7 @@ class TabSidebar(QtWidgets.QWidget):
         """Redraw from tab_list. Rows are reused rather than rebuilt, so a long list
         keeps its scroll position through every title change"""
         tabs = self.window.tab_list
+        self.closer.hide()  # its row may have just moved or gone
         # Blocked, or selecting the current tab's row would look like a click on it
         self.list.blockSignals(True)
         while self.list.count() > len(tabs):
@@ -572,6 +586,23 @@ class TabSidebar(QtWidgets.QWidget):
         if tab := self.window.current_tab:
             tab.view.setFocus()
 
+    def hover(self, pos: QtCore.QPoint):
+        if not (item := self.list.itemAt(pos)):
+            self.closer.hide()
+            return
+        rect = self.list.visualItemRect(item)
+        side = rect.height()
+        self.closer.setGeometry(rect.right() - side + 1, rect.top(), side, side)
+        self.closer.row = self.list.row(item)
+        self.closer.show()
+
+    def drop_index(self, pos: QtCore.QPoint):
+        """Where a link dropped here opens: in front of the row under the pointer or
+        behind it, whichever half it landed on, and last below every row"""
+        if not (item := self.list.itemAt(pos)):
+            return len(self.window.tab_list)
+        return self.list.row(item) + (pos.y() > self.list.visualItemRect(item).center().y())
+
     def eventFilter(self, obj, event):
         Type = QtCore.QEvent.Type
         if obj is self.search and event.type() is Type.KeyPress:
@@ -585,6 +616,42 @@ class TabSidebar(QtWidgets.QWidget):
                 if (first := next(rows, None)) is not None:
                     self.window.tabs.setCurrentIndex(first)
                     self.leave_search()
+                return True
+        elif obj is self.list.viewport():
+            if event.type() is Type.MouseButtonPress:
+                if event.button() is QtCore.Qt.MouseButton.MiddleButton:
+                    return True  # or the view selects the row, switching to a tab being closed
+                if event.button() is QtCore.Qt.MouseButton.LeftButton:
+                    item = self.list.itemAt(event.position().toPoint())
+                    # No reordering while filtered: with rows hidden, "between these
+                    # two" is ambiguous
+                    self.drag_row = self.list.row(item) if item and not self.query else None
+                # Not swallowed: the view still selects the row, which switches to it
+            elif event.type() is Type.MouseMove:
+                if not event.buttons() & QtCore.Qt.MouseButton.LeftButton:
+                    self.hover(event.position().toPoint())
+                    return False
+                # Reordered live under the pointer, as the top strip does, rather than
+                # by drag and drop, which the list finishes by deleting the dragged row
+                item = self.list.itemAt(event.position().toPoint())
+                if self.drag_row is not None and item and (to := self.list.row(item)) != self.drag_row:
+                    self.window.tabs.tabBar().moveTab(self.drag_row, to)  # tabMoved redraws
+                    self.drag_row = to
+                return True  # never the view's own drag-select, which switches tabs as it passes them
+            elif event.type() is Type.MouseButtonRelease:
+                self.drag_row = None
+                if event.button() is QtCore.Qt.MouseButton.MiddleButton:
+                    if item := self.list.itemAt(event.position().toPoint()):
+                        self.window.close_tab(self.list.row(item))
+                    return True
+            elif event.type() is Type.Leave:
+                self.closer.hide()
+            elif event.type() in (Type.DragEnter, Type.DragMove, Type.Drop) and event.mimeData().hasUrls():
+                event.acceptProposedAction()
+                if event.type() is Type.Drop:
+                    self.window.open_dropped(
+                        event.mimeData().urls(), self.drop_index(event.position().toPoint()),
+                    )
                 return True
         return super().eventFilter(obj, event)
 
@@ -813,13 +880,17 @@ class BrowserWindow(QtWidgets.QWidget):
                 to = len(self.tab_list)
                 if (at := obj.tabAt(pos)) >= 0:
                     to = at + (pos.x() > obj.tabRect(at).center().x())
-                for url in event.mimeData().urls():
-                    tab = self.new_tab(url.toString())
-                    # tabMoved keeps tab_list in step, same as a drag
-                    obj.moveTab(self.tab_list.index(tab), to)
-                    to += 1
+                self.open_dropped(event.mimeData().urls(), to)
             return True
         return super().eventFilter(obj, event)
+
+    def open_dropped(self, urls: list[QtCore.QUrl], to: int):
+        """Links dropped on either strip, each a new tab from index `to` on"""
+        for url in urls:
+            tab = self.new_tab(url.toString())
+            # tabMoved keeps tab_list in step, same as a drag
+            self.tabs.tabBar().moveTab(self.tab_list.index(tab), to)
+            to += 1
 
     def set_vertical(self, on: bool):
         """Tabs down the side or along the top. Only swaps which strip shows: the tabs,

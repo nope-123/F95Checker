@@ -24,6 +24,10 @@ from PyQt6 import (  # noqa: E402
 )
 from PyQt6.QtTest import QTest  # noqa: E402
 
+LEFT = QtCore.Qt.MouseButton.LeftButton
+MIDDLE = QtCore.Qt.MouseButton.MiddleButton
+NONE = QtCore.Qt.MouseButton.NoButton
+
 
 def until(check, ms=10000):
     """QTest.qWaitFor, which PyQt6 does not expose. Polls rather than sleeping a
@@ -77,6 +81,47 @@ def rows(window):
 def visible(window):
     items = window.sidebar.list
     return [i for i in range(items.count()) if not items.item(i).isHidden()]
+
+
+def in_step(window):
+    views = [window.tabs.widget(i) for i in range(window.tabs.count())]
+    return all(v is t.view for v, t in zip(views, window.tab_list))
+
+
+def mouse(widget, kind, pos, button, buttons):
+    point = QtCore.QPointF(pos)
+    event = QtGui.QMouseEvent(
+        kind, point, widget.mapToGlobal(point), button, buttons,
+        QtCore.Qt.KeyboardModifier.NoModifier,
+    )
+    QtWidgets.QApplication.sendEvent(widget, event)
+    QtWidgets.QApplication.processEvents()
+
+
+def row_center(window, row):
+    items = window.sidebar.list
+    return items.visualItemRect(items.item(row)).center()
+
+
+def drag_row(window, frm, to):
+    view = window.sidebar.list.viewport()
+    Type = QtCore.QEvent.Type
+    mouse(view, Type.MouseButtonPress, row_center(window, frm), LEFT, LEFT)
+    mouse(view, Type.MouseMove, row_center(window, to), NONE, LEFT)
+    mouse(view, Type.MouseButtonRelease, row_center(window, to), LEFT, NONE)
+
+
+def drop_link(window, pos, url):
+    """Enter first: Qt ignores a drop on a widget no drag ever entered"""
+    view = window.sidebar.list.viewport()
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl(url)])
+    args = (QtCore.Qt.DropAction.CopyAction, mime, NONE, QtCore.Qt.KeyboardModifier.NoModifier)
+    enter = QtGui.QDragEnterEvent(pos, *args)
+    QtWidgets.QApplication.sendEvent(view, enter)
+    assert view.acceptDrops() and enter.isAccepted(), "the list turned the link away"
+    QtWidgets.QApplication.sendEvent(view, QtGui.QDropEvent(QtCore.QPointF(pos), *args))
+    QtWidgets.QApplication.processEvents()
 
 
 def test_toggle_swaps_the_strips_and_is_remembered():
@@ -212,6 +257,72 @@ def test_enter_switches_to_the_first_match():
     assert search.text() == "" and visible(window) == [0, 1, 2], "Enter did not clear the search"
 
 
+def test_dragging_a_row_reorders_the_tabs():
+    app, window = browser()
+    window.toggle_vertical()
+    a, b, c = opened(window, "a", "b", "c")
+    drag_row(window, 2, 0)
+    assert window.tab_list == [c, a, b], f"tab_list is {rows(window)}"
+    assert in_step(window), "the tab bar disagrees with tab_list"
+    assert rows(window) == ["c", "a", "b"], rows(window)
+    assert window.current_tab is c, "the dragged tab is not the current one"
+
+
+def test_dragging_is_off_while_filtered():
+    app, window = browser()
+    window.toggle_vertical()
+    a, b, c = opened(window, "a", "b", "c")
+    window.sidebar.search.setText("about")  # matches every row, so all stay in reach
+    drag_row(window, 0, 2)
+    assert window.tab_list == [a, b, c], f"a filtered drag reordered: {rows(window)}"
+
+
+def test_middle_click_closes_without_switching():
+    app, window = browser()
+    window.toggle_vertical()
+    a, b, c = opened(window, "a", "b", "c")
+    view = window.sidebar.list.viewport()
+    Type = QtCore.QEvent.Type
+    mouse(view, Type.MouseButtonPress, row_center(window, 1), MIDDLE, MIDDLE)
+    assert window.current_tab is a, "a middle press switched to the tab it was closing"
+    mouse(view, Type.MouseButtonRelease, row_center(window, 1), MIDDLE, NONE)
+    assert window.tab_list == [a, c], f"middle click left {rows(window)}"
+
+
+def test_the_hover_close_button_closes_that_row():
+    app, window = browser()
+    window.toggle_vertical()
+    a, b, c = opened(window, "a", "b", "c")
+    mouse(window.sidebar.list.viewport(), QtCore.QEvent.Type.MouseMove, row_center(window, 2), NONE, NONE)
+    closer = window.sidebar.closer
+    assert closer.isVisible(), "hovering a row showed no close button"
+    closer.click()
+    assert window.tab_list == [a, b], f"the close button left {rows(window)}"
+    assert not closer.isVisible(), "the close button outlived its row"
+
+
+def test_a_link_dropped_on_the_list_opens_at_that_row():
+    app, window = browser()
+    window.toggle_vertical()
+    opened(window, "a", "b")
+    rect = window.sidebar.list.visualItemRect(window.sidebar.list.item(0))
+    drop_link(window, QtCore.QPoint(rect.center().x(), rect.bottom() - 1), "about:blank#dropped")  # lower half of the first row
+    assert rows(window) == ["a", "dropped", "b"], rows(window)
+    assert in_step(window), "the tab bar disagrees with tab_list"
+
+
+def test_a_link_dropped_while_filtered_lands_by_tab_order():
+    """With rows hidden, the row under the pointer is still that tab's real index"""
+    app, window = browser()
+    window.toggle_vertical()
+    opened(window, "a", "b", "c")
+    window.sidebar.search.setText("#c")
+    assert visible(window) == [2], visible(window)
+    rect = window.sidebar.list.visualItemRect(window.sidebar.list.item(2))
+    drop_link(window, QtCore.QPoint(rect.center().x(), rect.top() + 1), "about:blank#dropped")  # upper half of c, shown first
+    assert rows(window) == ["a", "b", "dropped", "c"], rows(window)
+
+
 if __name__ == "__main__":
     tests = {
         "toggle": test_toggle_swaps_the_strips_and_is_remembered,
@@ -222,6 +333,12 @@ if __name__ == "__main__":
         "scroll": test_a_long_list_keeps_its_place_through_updates,
         "search": test_search_filters_by_title_and_url,
         "enter": test_enter_switches_to_the_first_match,
+        "drag": test_dragging_a_row_reorders_the_tabs,
+        "filtered": test_dragging_is_off_while_filtered,
+        "middle": test_middle_click_closes_without_switching,
+        "hover": test_the_hover_close_button_closes_that_row,
+        "drop": test_a_link_dropped_on_the_list_opens_at_that_row,
+        "filtereddrop": test_a_link_dropped_while_filtered_lands_by_tab_order,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:
