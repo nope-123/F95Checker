@@ -646,6 +646,9 @@ class TabSidebar(QtWidgets.QWidget):
                     return True
             elif event.type() is Type.Leave:
                 self.closer.hide()
+            elif event.type() is Type.ContextMenu:
+                self.window.show_tab_menu(event.globalPos())
+                return True
             elif event.type() in (Type.DragEnter, Type.DragMove, Type.Drop) and event.mimeData().hasUrls():
                 event.acceptProposedAction()
                 if event.type() is Type.Drop:
@@ -792,6 +795,9 @@ class BrowserWindow(QtWidgets.QWidget):
                 ("Ctrl+Shift+A", self.sidebar.focus_search),  # Chrome's tab search
             ):
                 QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(handler)
+            bar = self.tabs.tabBar()
+            bar.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+            bar.customContextMenuRequested.connect(lambda pos: self.show_tab_menu(bar.mapToGlobal(pos)))
 
         if buttons:
             # Not gated on tabs like the shortcuts above: those act on tabs, find acts
@@ -913,6 +919,14 @@ class BrowserWindow(QtWidgets.QWidget):
     def vertical_label(self):
         # Edge's wording
         return "Turn off vertical tabs" if self.vertical else "Turn on vertical tabs"
+
+    def show_tab_menu(self, pos: QtCore.QPoint):
+        """Right-click on either strip. Holds only the layout toggle: the page keeps its
+        own menu, and this one is not a second place to find it"""
+        menu = QtWidgets.QMenu(self)
+        menu.addAction(self.vertical_label).triggered.connect(lambda _=None: self.toggle_vertical())
+        menu.exec(pos)
+        menu.deleteLater()
 
     def close_tab(self, index: int):
         if len(self.tab_list) <= 1:

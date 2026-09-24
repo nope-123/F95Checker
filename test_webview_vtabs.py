@@ -323,9 +323,32 @@ def test_a_link_dropped_while_filtered_lands_by_tab_order():
     assert rows(window) == ["a", "b", "dropped", "c"], rows(window)
 
 
+def test_right_click_menu_holds_the_toggle():
+    app, window = browser()
+    opened(window, "a", "b")
+    # A real menu spins its own event loop and would hang the run, so exec just
+    # records the menu. Never restored: each case is its own process
+    menus = []
+    QtWidgets.QMenu.exec = lambda self, *_: menus.append(self)
+    bar = window.tabs.tabBar()
+    bar.customContextMenuRequested.emit(bar.tabRect(0).center())
+    assert [a.text() for a in menus[-1].actions()] == ["Turn on vertical tabs"], menus[-1].actions()
+    menus[-1].actions()[0].trigger()
+    assert window.vertical, "the top strip's menu did not turn vertical tabs on"
+    view = window.sidebar.list.viewport()
+    pos = row_center(window, 0)
+    QtWidgets.QApplication.sendEvent(view, QtGui.QContextMenuEvent(
+        QtGui.QContextMenuEvent.Reason.Mouse, pos, view.mapToGlobal(pos),
+    ))
+    assert [a.text() for a in menus[-1].actions()] == ["Turn off vertical tabs"], menus[-1].actions()
+    menus[-1].actions()[0].trigger()
+    assert not window.vertical, "the sidebar's menu did not turn vertical tabs off"
+
+
 if __name__ == "__main__":
     tests = {
         "toggle": test_toggle_swaps_the_strips_and_is_remembered,
+        "menu": test_right_click_menu_holds_the_toggle,
         "mirror": test_the_list_mirrors_tab_list,
         "width": test_sidebar_width_is_remembered,
         "oneview": test_a_window_without_tabs_gets_neither_and_keeps_the_choice,
