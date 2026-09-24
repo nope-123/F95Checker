@@ -509,8 +509,8 @@ class FindBar(QtWidgets.QWidget):
 
 
 class TabSidebar(QtWidgets.QWidget):
-    """Vertical tabs: a list with one row per tab. Only ever a view of
-    window.tab_list, never a second copy of it -- nothing here reorders or drops a
+    """Vertical tabs: a search box over a list with one row per tab. Only ever a view
+    of window.tab_list, never a second copy of it -- nothing here reorders or drops a
     row. What you do to a row becomes the call the top strip would have made, and the
     list redraws from tab_list once that lands, so the two strips cannot disagree."""
 
@@ -520,11 +520,21 @@ class TabSidebar(QtWidgets.QWidget):
         self.setLayout(QtWidgets.QVBoxLayout(self))
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)
+        self.search = QtWidgets.QLineEdit(self)
+        self.search.setPlaceholderText("Search tabs")
+        self.search.setClearButtonEnabled(True)
         self.list = QtWidgets.QListWidget(self)
         self.list.setUniformItemSizes(True)
+        self.layout().addWidget(self.search)
         self.layout().addWidget(self.list)
 
         self.list.currentRowChanged.connect(self.row_changed)
+        self.search.textChanged.connect(lambda _: self.refresh())
+        self.search.installEventFilter(self)
+
+    @property
+    def query(self):
+        return self.search.text().strip().casefold()
 
     def refresh(self):
         """Redraw from tab_list. Rows are reused rather than rebuilt, so a long list
@@ -536,17 +546,47 @@ class TabSidebar(QtWidgets.QWidget):
             self.list.takeItem(self.list.count() - 1)
         while self.list.count() < len(tabs):
             self.list.addItem("")
+        query = self.query
         for row, tab in enumerate(tabs):
             title, url = tab.view.title() or "New tab", tab.view.url().toString()
             item = self.list.item(row)
             item.setText(title)
             item.setToolTip(f"{title}\n{url}")
+            # Only the row: the tab itself is untouched
+            item.setHidden(bool(query) and query not in title.casefold() and query not in url.casefold())
         self.list.setCurrentRow(self.window.tabs.currentIndex())
         self.list.blockSignals(False)
 
     def row_changed(self, row: int):
         if row >= 0:
             self.window.tabs.setCurrentIndex(row)
+
+    def focus_search(self):
+        """Ctrl+Shift+A. Only with the sidebar out: there is no box to focus otherwise"""
+        if self.window.vertical:
+            self.search.setFocus()
+            self.search.selectAll()
+
+    def leave_search(self):
+        self.search.clear()
+        if tab := self.window.current_tab:
+            tab.view.setFocus()
+
+    def eventFilter(self, obj, event):
+        Type = QtCore.QEvent.Type
+        if obj is self.search and event.type() is Type.KeyPress:
+            # key() is a plain int in PyQt6, so compared by value, as in FindBar
+            if event.key() == QtCore.Qt.Key.Key_Escape:
+                self.leave_search()
+                return True
+            if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+                rows = (row for row in range(self.list.count()) if not self.list.item(row).isHidden())
+                # No match keeps the query, so it can be fixed rather than retyped
+                if (first := next(rows, None)) is not None:
+                    self.window.tabs.setCurrentIndex(first)
+                    self.leave_search()
+                return True
+        return super().eventFilter(obj, event)
 
 
 class BrowserWindow(QtWidgets.QWidget):
@@ -682,6 +722,7 @@ class BrowserWindow(QtWidgets.QWidget):
                 ("Ctrl+W", lambda: self.close_tab(self.tabs.currentIndex())),
                 ("Ctrl+Tab", self.next_tab),
                 ("Ctrl+Shift+,", self.toggle_vertical),  # Edge's
+                ("Ctrl+Shift+A", self.sidebar.focus_search),  # Chrome's tab search
             ):
                 QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(handler)
 

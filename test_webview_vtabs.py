@@ -74,6 +74,11 @@ def rows(window):
     return [items.item(i).toolTip().split("\n")[-1].split("#")[-1] for i in range(items.count())]
 
 
+def visible(window):
+    items = window.sidebar.list
+    return [i for i in range(items.count()) if not items.item(i).isHidden()]
+
+
 def test_toggle_swaps_the_strips_and_is_remembered():
     app, window = browser()
     opened(window, "a")
@@ -166,6 +171,47 @@ def test_a_long_list_keeps_its_place_through_updates():
     assert scroll.value() == scroll.maximum(), f"the list jumped to {scroll.value()}"
 
 
+def test_search_filters_by_title_and_url():
+    app, window = browser()
+    window.toggle_vertical()
+    alpha, beta, gamma = opened(window, "a", "b", "c")
+    alpha.load("data:text/html,<title>Alpha thread</title>")
+    beta.load("data:text/html,<title>Beta thread</title>")
+    gamma.load("data:text/html,<title>Gamma</title><!--needle-->")
+    items = window.sidebar.list
+    assert until(
+        lambda: [items.item(i).text() for i in range(3)] == ["Alpha thread", "Beta thread", "Gamma"]
+    ), "the pages never loaded"
+    search = window.sidebar.search
+    search.setText("ALP")
+    assert visible(window) == [0], f"title search showed {visible(window)}"
+    search.setText("needle")
+    assert visible(window) == [2], f"url search showed {visible(window)}"
+    search.setText("thread")
+    beta.load("data:text/html,<title>Renamed</title>")
+    assert until(lambda: visible(window) == [0]), (
+        f"a tab renamed out of the search stayed listed: {visible(window)}"
+    )
+    search.setText("zzz")
+    QTest.keyClick(search, QtCore.Qt.Key.Key_Return)
+    assert search.text() == "zzz", "Enter with nothing to switch to threw the query away"
+    QTest.keyClick(search, QtCore.Qt.Key.Key_Escape)
+    assert search.text() == "" and visible(window) == [0, 1, 2], "Esc did not clear the search"
+    keys = [s.key().toString() for s in window.findChildren(QtGui.QShortcut)]
+    assert "Ctrl+Shift+A" in keys, f"no tab search shortcut, only {keys}"
+
+
+def test_enter_switches_to_the_first_match():
+    app, window = browser()
+    window.toggle_vertical()
+    opened(window, "one", "two", "three")
+    search = window.sidebar.search
+    search.setText("thr")
+    QTest.keyClick(search, QtCore.Qt.Key.Key_Return)
+    assert window.tabs.currentIndex() == 2, f"Enter went to tab {window.tabs.currentIndex()}"
+    assert search.text() == "" and visible(window) == [0, 1, 2], "Enter did not clear the search"
+
+
 if __name__ == "__main__":
     tests = {
         "toggle": test_toggle_swaps_the_strips_and_is_remembered,
@@ -174,6 +220,8 @@ if __name__ == "__main__":
         "oneview": test_a_window_without_tabs_gets_neither_and_keeps_the_choice,
         "findbar": test_the_find_bar_follows_the_page_when_toggled,
         "scroll": test_a_long_list_keeps_its_place_through_updates,
+        "search": test_search_filters_by_title_and_url,
+        "enter": test_enter_switches_to_the_first_match,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:
