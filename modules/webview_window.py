@@ -341,6 +341,7 @@ class WebTab:
     def url_changed(self, url: QtCore.QUrl):
         if self.is_current:
             self.window.set_url_text(url.url())
+        self.window.sidebar.refresh()  # the row's tooltip, and what search matches
 
     def title_changed(self, title: str):
         self.window.tab_title_changed(self, title)
@@ -507,6 +508,47 @@ class FindBar(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
 
+class TabSidebar(QtWidgets.QWidget):
+    """Vertical tabs: a list with one row per tab. Only ever a view of
+    window.tab_list, never a second copy of it -- nothing here reorders or drops a
+    row. What you do to a row becomes the call the top strip would have made, and the
+    list redraws from tab_list once that lands, so the two strips cannot disagree."""
+
+    def __init__(self, window: "BrowserWindow"):
+        super().__init__(window)
+        self.window = window
+        self.setLayout(QtWidgets.QVBoxLayout(self))
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+        self.list = QtWidgets.QListWidget(self)
+        self.list.setUniformItemSizes(True)
+        self.layout().addWidget(self.list)
+
+        self.list.currentRowChanged.connect(self.row_changed)
+
+    def refresh(self):
+        """Redraw from tab_list. Rows are reused rather than rebuilt, so a long list
+        keeps its scroll position through every title change"""
+        tabs = self.window.tab_list
+        # Blocked, or selecting the current tab's row would look like a click on it
+        self.list.blockSignals(True)
+        while self.list.count() > len(tabs):
+            self.list.takeItem(self.list.count() - 1)
+        while self.list.count() < len(tabs):
+            self.list.addItem("")
+        for row, tab in enumerate(tabs):
+            title, url = tab.view.title() or "New tab", tab.view.url().toString()
+            item = self.list.item(row)
+            item.setText(title)
+            item.setToolTip(f"{title}\n{url}")
+        self.list.setCurrentRow(self.window.tabs.currentIndex())
+        self.list.blockSignals(False)
+
+    def row_changed(self, row: int):
+        if row >= 0:
+            self.window.tabs.setCurrentIndex(row)
+
+
 class BrowserWindow(QtWidgets.QWidget):
     # Qt only recognizes signals declared as class attributes
     url_received = QtCore.pyqtSignal(str, dict)
@@ -539,6 +581,14 @@ class BrowserWindow(QtWidgets.QWidget):
         self.blocker = None
         self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
+        self.vertical = False
+        # Kept by the browser itself, not the main app: a setting there would be four
+        # of upstream's files for a preference only the browser reads and writes.
+        # IniFormat, so it sits in the app's own data folder rather than the registry
+        self.settings = QtCore.QSettings(
+            QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope,
+            "f95checker", "browser",
+        )
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
         self.cookies = CookieJar(self.profile.cookieStore(), self)
 
@@ -563,7 +613,8 @@ class BrowserWindow(QtWidgets.QWidget):
         b.reload = QtWidgets.QPushButton("󰑐", b)
         b.url = QtWidgets.QLineEdit(b)
         b.extension = QtWidgets.QPushButton(icon, "", b)
-        for widget in (b.back, b.forward, b.reload, b.url, b.extension):
+        b.vertical = QtWidgets.QPushButton("", b)  # set_vertical picks the glyph
+        for widget in (b.back, b.forward, b.reload, b.url, b.extension, b.vertical):
             b.layout().addWidget(widget)
         if buttons:
             self.controls.layout().addWidget(b)
@@ -590,21 +641,22 @@ class BrowserWindow(QtWidgets.QWidget):
             )
         else:
             b.extension.setVisible(False)
+        b.vertical.clicked.connect(lambda _=None: self.toggle_vertical())
+        b.vertical.setVisible(tabs)  # the one-page windows have no tabs to lay out
 
         self.tabs = QtWidgets.QTabWidget(self)
         # Built right away, before the tab bar's own event filter goes in below: that
         # filter's Show/Hide branch dereferences self.find, and an AttributeError
         # raised inside a Qt slot aborts the process and every open tab with it
         self.find = FindBar(self)
+        # Same reason: tab_changed and tabMoved redraw it
+        self.sidebar = TabSidebar(self)
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
         # Squeeze tabs to fit like a browser does rather than scroll them: QTabBar never
         # scrolls during a drag, so a tab scrolled off the edge is one you can't drop onto
         self.tabs.setElideMode(QtCore.Qt.TextElideMode.ElideRight)
-        # Always there, like a browser's, so a link always has somewhere to be dropped.
-        # The chrome-less windows are one page and never get one
-        self.tabs.tabBar().setVisible(tabs)
         # Qt has no middle-click-to-close, so filter the tab bar's own events. A filter
         # rather than a QTabBar subclass: nothing to construct before the tabs exist, and
         # close_tab is already on self
@@ -617,6 +669,8 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.tabBar().tabMoved.connect(
             lambda frm, to: self.tab_list.insert(to, self.tab_list.pop(frm))
         )
+        # Connected second, so it runs once tab_list is already back in step
+        self.tabs.tabBar().tabMoved.connect(lambda _, __: self.sidebar.refresh())
         # Window resize reaches the tab widget; the tab bar appearing or going away
         # does not, and it moves the page area under the bar
         self.tabs.installEventFilter(self)
@@ -627,6 +681,7 @@ class BrowserWindow(QtWidgets.QWidget):
                 ("Ctrl+T", lambda: self.new_tab("about:blank")),
                 ("Ctrl+W", lambda: self.close_tab(self.tabs.currentIndex())),
                 ("Ctrl+Tab", self.next_tab),
+                ("Ctrl+Shift+,", self.toggle_vertical),  # Edge's
             ):
                 QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(handler)
 
@@ -635,8 +690,23 @@ class BrowserWindow(QtWidgets.QWidget):
             # on a page. This keeps it out of the chrome-less login and cookie windows
             QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self).activated.connect(self.find.activate)
 
+        # Dragging the divider resizes the sidebar. Stretch only on the page, so a window
+        # resize goes to the page and the sidebar keeps the width it was given
+        self.splitter = QtWidgets.QSplitter(self)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.addWidget(self.sidebar)
+        self.splitter.addWidget(self.tabs)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([self.settings.value("sidebar_width", 220, type=int), 1])
+        self.splitter.splitterMoved.connect(
+            lambda _, __: self.settings.setValue("sidebar_width", self.splitter.sizes()[0])
+        )
+        # Never written here: that is toggle_vertical's job, so a login window, which
+        # always shows its one page flat, cannot clobber the choice
+        self.set_vertical(buttons and tabs and self.settings.value("vertical_tabs", False, type=bool))
+
         self.layout().addWidget(self.controls, stretch=0)
-        self.layout().addWidget(self.tabs, stretch=1)
+        self.layout().addWidget(self.splitter, stretch=1)
 
     @property
     def current_tab(self):
@@ -674,6 +744,7 @@ class BrowserWindow(QtWidgets.QWidget):
             tab.view.setFocus()
         if url:
             tab.load(url)
+        self.sidebar.refresh()
         return tab
 
     def eventFilter(self, obj, event):
@@ -709,6 +780,28 @@ class BrowserWindow(QtWidgets.QWidget):
             return True
         return super().eventFilter(obj, event)
 
+    def set_vertical(self, on: bool):
+        """Tabs down the side or along the top. Only swaps which strip shows: the tabs,
+        their order and the current one are untouched"""
+        self.vertical = on
+        self.sidebar.setVisible(on)
+        # The top strip is always there otherwise, like a browser's, so a link always
+        # has somewhere to be dropped. The one-page windows never get one
+        self.tabs.tabBar().setVisible(self.tabs_enabled and not on)
+        button = self.controls.buttons.vertical
+        button.setText("\U000f1513" if on else "\U000f10aa")  # nf-md-dock_top / nf-md-dock_left
+        button.setToolTip(self.vertical_label)
+        self.sidebar.refresh()
+
+    def toggle_vertical(self):
+        self.set_vertical(not self.vertical)
+        self.settings.setValue("vertical_tabs", self.vertical)
+
+    @property
+    def vertical_label(self):
+        # Edge's wording
+        return "Turn off vertical tabs" if self.vertical else "Turn on vertical tabs"
+
     def close_tab(self, index: int):
         if len(self.tab_list) <= 1:
             self.close()
@@ -720,6 +813,9 @@ class BrowserWindow(QtWidgets.QWidget):
         # dangling page. The page is a child of the view, so the view takes both.
         # Deferred because this runs inside QTabBar's mouse handler
         tab.view.deleteLater()
+        # Removing a tab in front of the current one moves no current tab, so nothing
+        # else would redraw
+        self.sidebar.refresh()
 
     def close_download_tab(self, download):
         # A download link that points off site now gets a tab of its own (see
@@ -743,6 +839,7 @@ class BrowserWindow(QtWidgets.QWidget):
         # The whole chrome follows whichever tab is now current
         tab = self.current_tab
         self.sync_controls()
+        self.sidebar.refresh()
         if not tab:
             return
         self.find.follow(tab)
@@ -754,6 +851,7 @@ class BrowserWindow(QtWidgets.QWidget):
     def tab_title_changed(self, tab: WebTab, title: str):
         if tab in self.tab_list:
             self.tabs.setTabText(self.tab_list.index(tab), title[:30])
+        self.sidebar.refresh()
         if tab.is_current and not self.title_fixed:
             self.setWindowTitle(title)
 

@@ -4,6 +4,7 @@
 # runs offscreen and touches no network: every page is set with setHtml().
 import os
 import sys
+import tempfile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -36,6 +37,11 @@ OTHER = "<html><body><p>dog</p><p>dog</p></body></html>"
 
 def browser():
     app = QtWidgets.QApplication(sys.argv)
+    # Vertical tabs are remembered in browser.ini. Pointed at a throwaway folder, or a
+    # machine that has them turned on would fail every top-strip assertion here
+    QtCore.QSettings.setPath(
+        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
+    )
     window = BrowserWindow(
         buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
