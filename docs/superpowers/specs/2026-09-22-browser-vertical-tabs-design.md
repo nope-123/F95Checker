@@ -1,7 +1,7 @@
 # Built-in browser: vertical tabs with search
 
 Date: 2026-09-22
-Status: approved
+Status: implemented
 
 ## Goal
 
