@@ -16,6 +16,7 @@ from modules.webview_window import (
 config_qt_flags(debug=False, software=True)
 
 from PyQt6 import (  # noqa: E402
+    QtCore,
     QtGui,
     QtWidgets,
 )
@@ -114,8 +115,69 @@ def test_a_window_without_tabs_never_asks():
     assert asked == [], f"a chrome-less window asked: {asked}"
 
 
+def test_links_open_beside_their_page():
+    """A link lands right of the page it came from rather than at the end of the
+    strip, a run of them off one page keeps click order, and a tab with no page
+    behind it (Ctrl+T, a link sent from the main app) still appends."""
+    app, window = browser()
+    first = window.new_tab()
+    second = window.new_tab(background=True)
+    a = window.new_tab(background=True, opener=first)
+    b = window.new_tab(background=True, opener=first)
+    blank = window.new_tab()
+    order = [first, a, b, second, blank]
+    assert window.tab_list == order, "tabs landed out of place"
+    # tab_list indices are tab bar indices, so the bar has to agree
+    views = [window.tabs.widget(i) for i in range(window.tabs.count())]
+    assert all(v is t.view for v, t in zip(views, order)), "the tab bar disagrees with tab_list"
+
+
+def test_long_titles_squeeze_instead_of_scrolling():
+    """QTabBar never scrolls during a drag, so a tab scrolled off the left edge is one
+    you cannot drop another in front of. Four long titles used to do exactly that."""
+    app, window = browser()
+    window.resize(900, 600)
+    for i in range(4):
+        window.new_tab()
+        window.tabs.setTabText(i, "x" * 30)  # tab_title_changed's cap
+    app.processEvents()
+    left = window.tabs.tabBar().tabRect(0).left()
+    assert left >= 0, f"the first tab scrolled off the bar (x={left}), out of drag reach"
+
+
+def test_a_link_dropped_on_the_tabs_opens_where_it_lands():
+    """Like a browser's tab strip: a link dropped on the left half of the first tab
+    opens as a new tab in front of it."""
+    app, window = browser()
+    first = window.new_tab()
+    bar = window.tabs.tabBar()
+    app.processEvents()
+    # A browser's strip is there with one tab too, or a lone tab has nowhere to drop
+    assert bar.isVisible(), "the tab bar is hidden with one tab open"
+    second = window.new_tab(background=True)
+    app.processEvents()
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl("about:blank#dropped")])
+    pos = QtCore.QPoint(bar.tabRect(0).left() + 2, bar.tabRect(0).center().y())
+    args = (QtCore.Qt.DropAction.CopyAction, mime,
+            QtCore.Qt.MouseButton.NoButton, QtCore.Qt.KeyboardModifier.NoModifier)
+    enter = QtGui.QDragEnterEvent(pos, *args)
+    QtWidgets.QApplication.sendEvent(bar, enter)
+    # Without both, the drop never arrives
+    assert bar.acceptDrops() and enter.isAccepted(), "the tab bar turned the link away"
+    QtWidgets.QApplication.sendEvent(bar, QtGui.QDropEvent(QtCore.QPointF(pos), *args))
+    assert len(window.tab_list) == 3, "the drop opened nothing"
+    dropped = window.tab_list[0]
+    assert window.tab_list[1:] == [first, second], "the drop did not land in front"
+    assert dropped.view.url() == QtCore.QUrl("about:blank#dropped"), dropped.view.url()
+    assert window.current_tab is dropped, "the dropped link did not get focus"
+
+
 if __name__ == "__main__":
     tests = {
+        "beside": test_links_open_beside_their_page,
+        "drop": test_a_link_dropped_on_the_tabs_opens_where_it_lands,
+        "squeeze": test_long_titles_squeeze_instead_of_scrolling,
         "single": test_one_tab_closes_without_asking,
         "veto": test_two_tabs_and_no_keeps_the_window,
         "confirm": test_two_tabs_and_yes_closes,

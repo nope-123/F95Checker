@@ -123,6 +123,7 @@ class WebTab:
         self.icon = icon
         self.loading = False
         self.probe = False
+        self.opener = None
         # Find state lives on the tab: the window has one bar, and it mirrors
         # whichever tab is current
         self.find_open = False
@@ -178,7 +179,7 @@ class WebTab:
         # Always background, never focus. Ad-gated download hosts fire a popup on the
         # same click that starts the download, so focusing it steals the page out from
         # under you. Ctrl/middle-clicked links were already background anyway
-        tab = self.window.new_tab(background=True)
+        tab = self.window.new_tab(background=True, opener=self)
         # Same deal as a redirect that leaves the site: a tab you never asked for earns
         # its place by handing over a file, and an ad popup that only renders a page
         # does not get to sit there. A ctrl or middle click is you asking for the tab by
@@ -261,7 +262,7 @@ class WebTab:
         # Nothing to lose your place in until this tab has a page of its own
         if self.view.history.count() and not same_site(url.host(), self.view.url().host()):
             request.reject()
-            tab = self.window.new_tab(url.url(), background=True)
+            tab = self.window.new_tab(url.url(), background=True, opener=self)
             # A link you clicked keeps its tab, because you asked for it by name. A
             # redirect you never saw does not: it gets the tab on approval, and only a
             # file justifies it
@@ -598,11 +599,17 @@ class BrowserWindow(QtWidgets.QWidget):
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
-        self.tabs.tabBar().setVisible(False)  # shown once a second tab exists
+        # Squeeze tabs to fit like a browser does rather than scroll them: QTabBar never
+        # scrolls during a drag, so a tab scrolled off the edge is one you can't drop onto
+        self.tabs.setElideMode(QtCore.Qt.TextElideMode.ElideRight)
+        # Always there, like a browser's, so a link always has somewhere to be dropped.
+        # The chrome-less windows are one page and never get one
+        self.tabs.tabBar().setVisible(tabs)
         # Qt has no middle-click-to-close, so filter the tab bar's own events. A filter
         # rather than a QTabBar subclass: nothing to construct before the tabs exist, and
         # close_tab is already on self
         self.tabs.tabBar().installEventFilter(self)
+        self.tabs.tabBar().setAcceptDrops(True)  # a link dropped there opens, see eventFilter
         self.tabs.currentChanged.connect(self.tab_changed)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         # Every index in here is a tab bar index, so dragging a tab has to move
@@ -641,11 +648,19 @@ class BrowserWindow(QtWidgets.QWidget):
         # Kept so cookies()/css_redirect()/xpath_redirect() need no changes
         return self.current_tab.view
 
-    def new_tab(self, url: str = None, background: bool = False):
+    def new_tab(self, url: str = None, background: bool = False, opener: WebTab = None):
         tab = WebTab(self, self.extension, self.icon)
-        index = self.tabs.addTab(tab.view, "New tab")
+        tab.opener = opener
+        # A link opens beside the page it came from, not at the far end of the strip,
+        # and a run of them off one page stays in the order they were clicked. Ctrl+T
+        # and links sent from the main app have no page to sit beside, so they append
+        index = len(self.tab_list)
+        if opener in self.tab_list:
+            index = self.tab_list.index(opener) + 1
+            while index < len(self.tab_list) and self.tab_list[index].opener is opener:
+                index += 1
+        index = self.tabs.insertTab(index, tab.view, "New tab")
         self.tab_list.insert(index, tab)
-        self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
         # A stacked layout only gives geometry to the tab on screen, so a tab that opens
         # behind one lays its page out at QWidget's 100x30 default. A post link scrolls
         # to its anchor at that width, and switching to the tab relayouts a document many
@@ -675,6 +690,23 @@ class BrowserWindow(QtWidgets.QWidget):
                 if (index := obj.tabAt(event.position().toPoint())) >= 0:
                     self.close_tab(index)
                     return True
+        elif obj is self.tabs.tabBar() and event.type() in (
+            QtCore.QEvent.Type.DragEnter, QtCore.QEvent.Type.DragMove, QtCore.QEvent.Type.Drop,
+        ) and event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            if event.type() is QtCore.QEvent.Type.Drop:
+                # Opens where it lands, like a browser's tab strip: in front of the tab
+                # under the pointer or behind it, whichever half it was dropped on
+                pos = event.position().toPoint()
+                to = len(self.tab_list)
+                if (at := obj.tabAt(pos)) >= 0:
+                    to = at + (pos.x() > obj.tabRect(at).center().x())
+                for url in event.mimeData().urls():
+                    tab = self.new_tab(url.toString())
+                    # tabMoved keeps tab_list in step, same as a drag
+                    obj.moveTab(self.tab_list.index(tab), to)
+                    to += 1
+            return True
         return super().eventFilter(obj, event)
 
     def close_tab(self, index: int):
@@ -688,7 +720,6 @@ class BrowserWindow(QtWidgets.QWidget):
         # dangling page. The page is a child of the view, so the view takes both.
         # Deferred because this runs inside QTabBar's mouse handler
         tab.view.deleteLater()
-        self.tabs.tabBar().setVisible(self.tabs_enabled and len(self.tab_list) > 1)
 
     def close_download_tab(self, download):
         # A download link that points off site now gets a tab of its own (see

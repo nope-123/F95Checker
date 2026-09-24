@@ -95,7 +95,9 @@ def test_bar_sits_over_the_top_right_of_the_page():
     assert bar.x() + bar.width() == tabs.width() - FindBar.MARGIN, (
         f"bar right edge {bar.x() + bar.width()} is not {FindBar.MARGIN} from {tabs.width()}"
     )
-    assert bar.y() == FindBar.MARGIN, f"bar top {bar.y()} is not {FindBar.MARGIN}"
+    # The tab bar is always there now, even with one tab, and the page starts under it
+    top = window.tabs.tabBar().height() + FindBar.MARGIN
+    assert bar.y() == top, f"bar top {bar.y()} is not {top}"
 
 
 def test_bar_clears_the_tab_bar_when_a_second_tab_opens():
