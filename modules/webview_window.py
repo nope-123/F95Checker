@@ -820,6 +820,9 @@ class BrowserWindow(QtWidgets.QWidget):
             # Not gated on tabs like the shortcuts above: those act on tabs, find acts
             # on a page. This keeps it out of the chrome-less login and cookie windows
             QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self).activated.connect(self.find.activate)
+            # The reload button's own action, so on a page still loading they stop it
+            for keys in ("F5", "Ctrl+R"):
+                QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(lambda: self.current_tab.reload())
 
         # Dragging the divider resizes the sidebar. Stretch only on the page, so a window
         # resize goes to the page and the sidebar keeps the width it was given

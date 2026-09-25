@@ -74,6 +74,35 @@ def test_the_back_and_forward_buttons_navigate():
     assert seen.get("forward") == "/b", f"forward left the tab on {seen.get('forward')}"
 
 
+def test_f5_and_ctrl_r_reload():
+    """A browser's reload keys. Qt's web view comes with none of a browser's own
+    shortcuts, so every one of them is the window's to add"""
+    app = QtWidgets.QApplication(sys.argv)
+    window = BrowserWindow(
+        buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
+        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
+        proxy_auth=None, title="test",
+    )
+    tab = window.new_tab()
+    reloads = []
+    tab.reload = lambda: reloads.append(tab)  # what the reload button calls
+    keys = {shortcut.key().toString(): shortcut for shortcut in window.findChildren(QtGui.QShortcut)}
+    for key in ("F5", "Ctrl+R"):
+        assert key in keys, f"no {key} shortcut, only {sorted(keys)}"
+        keys[key].activated.emit()
+    assert reloads == [tab, tab], f"the keys reloaded {len(reloads)} times, not twice"
+
+
 if __name__ == "__main__":
-    test_the_back_and_forward_buttons_navigate()
-    print("ok")
+    tests = {
+        "buttons": test_the_back_and_forward_buttons_navigate,
+        "reload": test_f5_and_ctrl_r_reload,
+    }
+    # One QApplication per process, so each case runs as its own subprocess
+    if len(sys.argv) > 1:
+        tests[sys.argv[1]]()
+    else:
+        import subprocess
+        for case in tests:
+            subprocess.run([sys.executable, __file__, case], check=True)
+        print("ok")
