@@ -345,6 +345,44 @@ def test_right_click_menu_holds_the_toggle():
     assert not window.vertical, "the sidebar's menu did not turn vertical tabs off"
 
 
+def test_long_titles_fit_the_sidebar():
+    """Every row is as wide as the list, never as wide as its title. A row wider than
+    the list scrolls it sideways, and puts the hover x past the edge on every row"""
+    app, window = browser()
+    window.toggle_vertical()
+    short, long = opened(window, "short", "long")
+    long.load("data:text/html,<title>" + "A long thread title " * 10 + "</title>")
+    items = window.sidebar.list
+    assert until(lambda: items.item(1).text().startswith("A long")), "the page never loaded"
+    view = items.viewport()
+    assert items.visualItemRect(items.item(0)).width() <= view.width(), (
+        f"a row is {items.visualItemRect(items.item(0)).width()} wide in a {view.width()} list"
+    )
+    assert not items.horizontalScrollBar().isVisible(), "the list scrolls sideways"
+    mouse(view, QtCore.QEvent.Type.MouseMove, row_center(window, 0), NONE, NONE)
+    closer = window.sidebar.closer.geometry()
+    assert view.rect().contains(closer), f"the close button sits at {closer}, outside {view.rect()}"
+
+
+def test_closing_a_row_keeps_the_list_where_it_is():
+    """How a long list gets cleaned up: close old tabs near the top while the current
+    one sits far below. Each close renumbers the current row, and that is no reason to
+    scroll the list down to it"""
+    app, window = browser()
+    window.resize(900, 300)  # rows are short offscreen: forty only overflow a short window
+    window.toggle_vertical()
+    opened(window, *map(str, range(40)))
+    window.tabs.setCurrentIndex(39)
+    scroll = window.sidebar.list.verticalScrollBar()
+    assert scroll.maximum() > 0, "not enough tabs to scroll, so this proves nothing"
+    scroll.setValue(0)
+    window.close_tab(3)
+    assert scroll.value() == 0, f"the list jumped to {scroll.value()}"
+    window.tabs.setCurrentIndex(0)
+    window.tabs.setCurrentIndex(38)
+    assert scroll.value() == scroll.maximum(), "switching tabs no longer brings the row into view"
+
+
 if __name__ == "__main__":
     tests = {
         "toggle": test_toggle_swaps_the_strips_and_is_remembered,
@@ -362,6 +400,8 @@ if __name__ == "__main__":
         "hover": test_the_hover_close_button_closes_that_row,
         "drop": test_a_link_dropped_on_the_list_opens_at_that_row,
         "filtereddrop": test_a_link_dropped_while_filtered_lands_by_tab_order,
+        "fit": test_long_titles_fit_the_sidebar,
+        "closekeeps": test_closing_a_row_keeps_the_list_where_it_is,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

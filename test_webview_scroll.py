@@ -3,8 +3,10 @@
 # Needs PyQt6 + QtWebEngine (like test_webview_block.py, unlike test_blocklist.py),
 # runs offscreen and serves its pages from 127.0.0.1, so it touches no network.
 import http.server
+import json
 import os
 import sys
+import tempfile
 import threading
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -44,6 +46,14 @@ THREAD = (
 ).encode()
 
 WIDTH, HEIGHT = 1200, 900
+# Where the page sits relative to the post it was opened on
+WHERE = """
+    JSON.stringify({
+        scroll: Math.round(window.scrollY),
+        post: Math.round(document.getElementById('post-%d').getBoundingClientRect().top),
+        end: Math.round(document.documentElement.scrollHeight - window.innerHeight),
+    })
+""" % TARGET
 
 
 def serve(routes: dict):
@@ -78,6 +88,11 @@ def thread_server():
 
 def browser():
     app = QtWidgets.QApplication(sys.argv)
+    # Vertical tabs are remembered in browser.ini. Pointed at a throwaway folder, or a
+    # machine that has them turned on would lay these pages out narrower
+    QtCore.QSettings.setPath(
+        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
+    )
     window = BrowserWindow(
         buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
@@ -89,13 +104,14 @@ def browser():
 
 
 def probe(app, tab, script: str, ms: int):
-    """Run the browser for ms, then ask one tab's page a question and quit."""
+    """Run the browser for ms, then ask one tab's page a question and quit. The tab can
+    be a callable, for one that does not exist yet when the run starts."""
     seen = {}
     def ask():
         def got(result):
             seen["result"] = result
             app.quit()
-        tab.page.runJavaScript(script, got)
+        (tab() if callable(tab) else tab).page.runJavaScript(script, got)
     QtCore.QTimer.singleShot(ms, ask)
     app.exec()
     return seen.get("result")
@@ -127,15 +143,39 @@ def test_a_post_link_opened_in_a_background_tab_keeps_its_place():
         window.tab_list.index(background)
     ))
 
-    seen = probe(app, background, """
-        JSON.stringify({
-            scroll: Math.round(window.scrollY),
-            post: Math.round(document.getElementById('post-%d').getBoundingClientRect().top),
-            end: Math.round(document.documentElement.scrollHeight - window.innerHeight),
-        })
-    """ % TARGET, 6000)
-    import json
-    at = json.loads(seen)
+    at = json.loads(probe(app, background, WHERE, 6000))
+    assert abs(at["post"]) <= 2, f"the tab did not stop on the post: {at}"
+    assert at["scroll"] != at["end"], f"the tab ran to the end of the thread: {at}"
+
+
+def test_a_restored_tab_keeps_its_place():
+    """The same bug, for the tabs the browser reopens on startup. create() restores them
+    before open() first shows the window, so there is no page on screen yet to lend
+    them its size."""
+    port = thread_server()
+    app = QtWidgets.QApplication(sys.argv)
+    QtCore.QStandardPaths.setTestModeEnabled(True)  # a non-private window opens a profile
+    QtCore.QSettings.setPath(
+        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
+    )
+    QtCore.QSettings(
+        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, "f95checker", "browser",
+    ).setValue("session", json.dumps([f"http://127.0.0.1:{port}/thread#post-{TARGET}"]))
+    window = BrowserWindow(
+        buttons=True, tabs=True, private=False, icon=QtGui.QIcon(),
+        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
+        proxy_auth=None, title="test",
+    )
+    # create() and open()'s order: sized, restored, the clicked link's tab, then shown
+    window.resize(WIDTH, HEIGHT)
+    window.restore_session()
+    window.new_tab()
+    window.show()
+    def restored():
+        return next(tab for tab in window.tab_list if "#post" in tab.view.url().toString())
+    QtCore.QTimer.singleShot(3000, lambda: window.tabs.setCurrentIndex(window.tab_list.index(restored())))
+
+    at = json.loads(probe(app, restored, WHERE, 6000))
     assert abs(at["post"]) <= 2, f"the tab did not stop on the post: {at}"
     assert at["scroll"] != at["end"], f"the tab ran to the end of the thread: {at}"
 
@@ -144,6 +184,7 @@ if __name__ == "__main__":
     tests = {
         "size": test_background_tab_is_laid_out_at_the_page_size,
         "anchor": test_a_post_link_opened_in_a_background_tab_keeps_its_place,
+        "restored": test_a_restored_tab_keeps_its_place,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:

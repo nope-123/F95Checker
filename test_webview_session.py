@@ -116,7 +116,8 @@ def test_the_last_tabs_come_back_before_the_new_link():
     second = window_()
     second.restore_session()  # what create() does before the clicked link's tab
     second.new_tab("about:blank#clicked")
-    assert names(second) == ["a", "b", "clicked"], names(second)
+    # Once the window is up, so a first turn of the event loop
+    assert until(lambda: names(second) == ["a", "b", "clicked"]), names(second)
     assert second.current_tab is second.tab_list[-1], "the link you clicked is not the tab shown"
 
 

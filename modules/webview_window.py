@@ -509,6 +509,15 @@ class FindBar(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
 
+class FitWidth(QtWidgets.QStyledItemDelegate):
+    """Asks for no width, so the list gives every row its own width and the title is
+    elided to fit. Left to itself a row is as wide as its title, which scrolls the list
+    sideways and puts the hover close button past the edge, on every row at once"""
+
+    def sizeHint(self, option, index):
+        return QtCore.QSize(0, super().sizeHint(option, index).height())
+
+
 class TabSidebar(QtWidgets.QWidget):
     """Vertical tabs: a search box over a list with one row per tab. Only ever a view
     of window.tab_list, never a second copy of it -- nothing here reorders or drops a
@@ -519,6 +528,7 @@ class TabSidebar(QtWidgets.QWidget):
         super().__init__(window)
         self.window = window
         self.drag_row = None  # the row a left press landed on, until the release
+        self.shown = None  # the current tab as of the last redraw
         self.setLayout(QtWidgets.QVBoxLayout(self))
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)
@@ -527,6 +537,8 @@ class TabSidebar(QtWidgets.QWidget):
         self.search.setClearButtonEnabled(True)
         self.list = QtWidgets.QListWidget(self)
         self.list.setUniformItemSizes(True)
+        self.list.setItemDelegate(FitWidth(self.list))
+        self.list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.setMouseTracking(True)  # hovering a row moves the close button onto it
         self.list.viewport().setAcceptDrops(True)
         self.layout().addWidget(self.search)
@@ -555,6 +567,10 @@ class TabSidebar(QtWidgets.QWidget):
         keeps its scroll position through every title change"""
         tabs = self.window.tab_list
         self.closer.hide()  # its row may have just moved or gone
+        # Read before anything changes: dropping the last row while it is the current
+        # one already scrolls to the row that takes over
+        scroll = self.list.verticalScrollBar()
+        kept = scroll.value()
         # Blocked, or selecting the current tab's row would look like a click on it
         self.list.blockSignals(True)
         while self.list.count() > len(tabs):
@@ -570,6 +586,11 @@ class TabSidebar(QtWidgets.QWidget):
             # Only the row: the tab itself is untouched
             item.setHidden(bool(query) and query not in title.casefold() and query not in url.casefold())
         self.list.setCurrentRow(self.window.tabs.currentIndex())
+        # Selecting scrolls to the row, which is only wanted for a different tab. The same
+        # one renumbered by a close above it would drag the list down to it on every close
+        if self.window.current_tab is self.shown:
+            scroll.setValue(kept)
+        self.shown = self.window.current_tab
         self.list.blockSignals(False)
 
     def row_changed(self, row: int):
@@ -980,8 +1001,16 @@ class BrowserWindow(QtWidgets.QWidget):
             return
         urls = json.loads(self.settings.value("session", "[]"))
         if urls and self.settings.value("restore_tabs", True, type=bool):
-            for url in urls:
-                self.new_tab(url, background=True)
+            def reopen():
+                # In front of the clicked link's tab, which stays the one shown
+                for index, url in enumerate(urls):
+                    tab = self.new_tab(url, background=True)
+                    self.tabs.tabBar().moveTab(self.tab_list.index(tab), index)
+            # Once the window is up, though read now, before anything saves over it.
+            # create() runs before open() shows the window, so there is no page on
+            # screen to lend these its size yet, and a page laid out at 100x30 loses
+            # the post it was opened on
+            QtCore.QTimer.singleShot(0, reopen)
         elif urls:
             self.closed.append((None, urls))  # None: after every tab, not at a position
 

@@ -66,6 +66,11 @@ def serve(routes: dict):
 
 def browser():
     app = QtWidgets.QApplication(sys.argv)
+    # Vertical tabs are remembered in browser.ini. Pointed at a throwaway folder, or a
+    # machine that has them turned on would lay these pages out narrower
+    QtCore.QSettings.setPath(
+        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
+    )
     window = BrowserWindow(
         buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
