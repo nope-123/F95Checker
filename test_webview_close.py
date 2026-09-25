@@ -177,8 +177,23 @@ def test_a_link_dropped_on_the_tabs_opens_where_it_lands():
     assert window.current_tab is dropped, "the dropped link did not get focus"
 
 
+def test_f5_and_ctrl_r_reload():
+    """A browser's reload keys. Qt's web view comes with none of a browser's own
+    shortcuts, so every one of them is the window's to add"""
+    app, window = browser()
+    tab = window.new_tab()
+    reloads = []
+    tab.reload = lambda: reloads.append(tab)  # what the reload button calls
+    keys = {shortcut.key().toString(): shortcut for shortcut in window.findChildren(QtGui.QShortcut)}
+    for key in ("F5", "Ctrl+R"):
+        assert key in keys, f"no {key} shortcut, only {sorted(keys)}"
+        keys[key].activated.emit()
+    assert reloads == [tab, tab], f"the keys reloaded {len(reloads)} times, not twice"
+
+
 if __name__ == "__main__":
     tests = {
+        "reload": test_f5_and_ctrl_r_reload,
         "beside": test_links_open_beside_their_page,
         "drop": test_a_link_dropped_on_the_tabs_opens_where_it_lands,
         "squeeze": test_long_titles_squeeze_instead_of_scrolling,
