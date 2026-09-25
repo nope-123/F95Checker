@@ -3,15 +3,17 @@
 # Needs PyQt6 + QtWebEngine (so unlike test_blocklist.py it is not dependency free),
 # runs offscreen and touches no network: pages are either set with setHtml() and
 # navigate to .invalid hosts that never resolve, or served from 127.0.0.1.
-import http.server
 import os
 import pathlib
 import sys
 import tempfile
-import threading
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+from webview_testkit import (
+    isolate_settings,
+    serve,
+)
 from modules.webview_window import (
     BrowserWindow,
     config_qt_flags,
@@ -41,36 +43,11 @@ CROSS_SITE = "https://elsewhere.invalid/d?zid=1"
 SAME_SITE = "https://cdn.opener.invalid/file.zip"
 
 
-def serve(routes: dict):
-    """Serve a path -> (status, headers, body) table on 127.0.0.1 and return the port.
-    Header values may contain {port}. Threaded, and never shut down: a single threaded
-    server sits blocked in a connection the browser keeps alive, and shutdown() then
-    waits on it forever."""
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            status, headers, body = routes.get(self.path, (404, {}, b""))
-            self.send_response(status)
-            for header, value in headers.items():
-                self.send_header(header, value.format(port=self.server.server_port))
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        def log_message(self, *_):
-            pass
-
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server.server_port
 
 
 def browser():
     app = QtWidgets.QApplication(sys.argv)
-    # Vertical tabs are remembered in browser.ini. Pointed at a throwaway folder, or a
-    # machine that has them turned on would lay these pages out narrower
-    QtCore.QSettings.setPath(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
-    )
+    isolate_settings()
     window = BrowserWindow(
         buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,

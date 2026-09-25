@@ -5,10 +5,12 @@
 # page content, so no case here loads a page at all.
 import os
 import sys
-import tempfile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+from webview_testkit import (
+    isolate_settings,
+)
 from modules.webview_window import (
     BrowserWindow,
     config_qt_flags,
@@ -25,11 +27,7 @@ from PyQt6 import (  # noqa: E402
 
 def browser(tabs=True):
     app = QtWidgets.QApplication(sys.argv)
-    # Vertical tabs are remembered in browser.ini. Pointed at a throwaway folder, or a
-    # machine that has them turned on would fail every top-strip assertion here
-    QtCore.QSettings.setPath(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
-    )
+    isolate_settings()
     window = BrowserWindow(
         buttons=True, tabs=tabs, private=True, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,

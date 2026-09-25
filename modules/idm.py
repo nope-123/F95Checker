@@ -67,54 +67,46 @@ def send_download(url: str, *, cookies: str = "", referer: str = "",
                   user_agent: str = "", timeout: float = 5.0):
     """Returns True once IDM has been handed the download, False for any failure at
     all -- IDM not running, protocol changed, anything. The caller falls back."""
-    sock = None
     try:
-        sock = socket.create_connection((HOST, PORT), timeout=timeout)
-        sock.settimeout(timeout)
-        key = base64.b64encode(os.urandom(16)).decode()
-        sock.sendall((
-            f"GET /?cid=0&rnd=0 HTTP/1.1\r\n"
-            f"Host: {HOST}:{PORT}\r\n"
-            f"Upgrade: websocket\r\nConnection: Upgrade\r\n"
-            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
-            f"Sec-WebSocket-Protocol: {SUBPROTOCOL}\r\n"
-            f"Origin: {ORIGIN}\r\n\r\n"
-        ).encode())
-        buf = bytearray()
-        while b"\r\n\r\n" not in buf:
-            chunk = sock.recv(4096)
-            if not chunk:
+        with socket.create_connection((HOST, PORT), timeout=timeout) as sock:
+            key = base64.b64encode(os.urandom(16)).decode()
+            sock.sendall((
+                f"GET /?cid=0&rnd=0 HTTP/1.1\r\n"
+                f"Host: {HOST}:{PORT}\r\n"
+                f"Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+                f"Sec-WebSocket-Protocol: {SUBPROTOCOL}\r\n"
+                f"Origin: {ORIGIN}\r\n\r\n"
+            ).encode())
+            buf = bytearray()
+            while b"\r\n\r\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    return False
+                buf += chunk
+            head, _, rest = bytes(buf).partition(b"\r\n\r\n")
+            if b" 101 " not in head.split(b"\r\n")[0]:
                 return False
-            buf += chunk
-        head, _, rest = bytes(buf).partition(b"\r\n\r\n")
-        if b" 101 " not in head.split(b"\r\n")[0]:
-            return False
-        buf = bytearray(rest)
-        # The numbers are the extension's own protocol/browser constants, kept as they
-        # are because IDM checks them; only the client name says who is really calling
-        sock.sendall(_frame(encode(1, 2, 5, 0, (113, 93, 1031, 0, 16845059, 0, 15, 3), {
-            112: "F95Checker", 113: "F95Checker", 116: "en-US", 125: "{}",
-        })))
-        # IDM drops a download sent before it has replied to the hello. Nothing here
-        # reads that reply, only waits for it, and it can already be sitting in what
-        # came back with the handshake -- so any bytes at all are the whole answer
-        if not buf and not sock.recv(65536):
-            return False
-        sock.sendall(_frame(encode(2, 14, 1, 0, (1,), {
-            6: url, 7: referer, 50: referer, 8: 4,
-            51: cookies, 54: user_agent,
-        })))
-        # IDM reads the socket asynchronously and drops whatever a client left behind
-        # when it disconnects, so closing right here silently loses the download -- it
-        # took ~0.13s to act on one in testing. There is no ack to wait for, so just
-        # stay long enough for it to have read the message
-        time.sleep(0.5)
-        return True
+            buf = bytearray(rest)
+            # The numbers are the extension's own protocol/browser constants, kept as they
+            # are because IDM checks them; only the client name says who is really calling
+            sock.sendall(_frame(encode(1, 2, 5, 0, (113, 93, 1031, 0, 16845059, 0, 15, 3), {
+                112: "F95Checker", 113: "F95Checker", 116: "en-US", 125: "{}",
+            })))
+            # IDM drops a download sent before it has replied to the hello. Nothing here
+            # reads that reply, only waits for it, and it can already be sitting in what
+            # came back with the handshake -- so any bytes at all are the whole answer
+            if not buf and not sock.recv(65536):
+                return False
+            sock.sendall(_frame(encode(2, 14, 1, 0, (1,), {
+                6: url, 7: referer, 50: referer, 8: 4,
+                51: cookies, 54: user_agent,
+            })))
+            # IDM reads the socket asynchronously and drops whatever a client left behind
+            # when it disconnects, so closing right here silently loses the download -- it
+            # took ~0.13s to act on one in testing. There is no ack to wait for, so just
+            # stay long enough for it to have read the message
+            time.sleep(0.5)
+            return True
     except (OSError, struct.error):
         return False
-    finally:
-        if sock is not None:
-            try:
-                sock.close()
-            except OSError:
-                pass

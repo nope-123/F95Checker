@@ -2,15 +2,17 @@
 # Run: python test_webview_scroll.py
 # Needs PyQt6 + QtWebEngine (like test_webview_block.py, unlike test_blocklist.py),
 # runs offscreen and serves its pages from 127.0.0.1, so it touches no network.
-import http.server
 import json
 import os
 import sys
-import tempfile
-import threading
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+from webview_testkit import (
+    isolate_settings,
+    serve,
+    settings,
+)
 from modules.webview_window import (
     BrowserWindow,
     config_qt_flags,
@@ -56,25 +58,6 @@ WHERE = """
 """ % TARGET
 
 
-def serve(routes: dict):
-    """Serve a path -> (status, headers, body) table on 127.0.0.1 and return the port.
-    Header values may contain {port}. Threaded and never shut down, exactly as in
-    test_webview_block.py and for the same reason."""
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            status, headers, body = routes.get(self.path, (404, {}, b""))
-            self.send_response(status)
-            for header, value in headers.items():
-                self.send_header(header, value.format(port=self.server.server_port))
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        def log_message(self, *_):
-            pass
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server.server_port
 
 
 def thread_server():
@@ -88,11 +71,7 @@ def thread_server():
 
 def browser():
     app = QtWidgets.QApplication(sys.argv)
-    # Vertical tabs are remembered in browser.ini. Pointed at a throwaway folder, or a
-    # machine that has them turned on would lay these pages out narrower
-    QtCore.QSettings.setPath(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
-    )
+    isolate_settings()
     window = BrowserWindow(
         buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
@@ -104,14 +83,13 @@ def browser():
 
 
 def probe(app, tab, script: str, ms: int):
-    """Run the browser for ms, then ask one tab's page a question and quit. The tab can
-    be a callable, for one that does not exist yet when the run starts."""
+    """Run the browser for ms, then ask one tab's page a question and quit."""
     seen = {}
     def ask():
         def got(result):
             seen["result"] = result
             app.quit()
-        (tab() if callable(tab) else tab).page.runJavaScript(script, got)
+        tab.page.runJavaScript(script, got)
     QtCore.QTimer.singleShot(ms, ask)
     app.exec()
     return seen.get("result")
@@ -155,12 +133,8 @@ def test_a_restored_tab_keeps_its_place():
     port = thread_server()
     app = QtWidgets.QApplication(sys.argv)
     QtCore.QStandardPaths.setTestModeEnabled(True)  # a non-private window opens a profile
-    QtCore.QSettings.setPath(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
-    )
-    QtCore.QSettings(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, "f95checker", "browser",
-    ).setValue("session", json.dumps([f"http://127.0.0.1:{port}/thread#post-{TARGET}"]))
+    isolate_settings()
+    settings().setValue("session", json.dumps([f"http://127.0.0.1:{port}/thread#post-{TARGET}"]))
     window = BrowserWindow(
         buttons=True, tabs=True, private=False, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
@@ -171,9 +145,9 @@ def test_a_restored_tab_keeps_its_place():
     window.restore_session()
     window.new_tab()
     window.show()
-    def restored():
-        return next(tab for tab in window.tab_list if "#post" in tab.view.url().toString())
-    QtCore.QTimer.singleShot(3000, lambda: window.tabs.setCurrentIndex(window.tab_list.index(restored())))
+    app.processEvents()  # the restore waits for the window to be up
+    restored = window.tab_list[0]
+    QtCore.QTimer.singleShot(3000, lambda: window.tabs.setCurrentIndex(window.tab_list.index(restored)))
 
     at = json.loads(probe(app, restored, WHERE, 6000))
     assert abs(at["post"]) <= 2, f"the tab did not stop on the post: {at}"

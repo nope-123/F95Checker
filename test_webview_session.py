@@ -7,10 +7,14 @@
 import json
 import os
 import sys
-import tempfile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+from webview_testkit import (
+    isolate_settings,
+    settings,
+    until,
+)
 from modules.webview_window import (
     BrowserWindow,
     config_qt_flags,
@@ -23,7 +27,6 @@ from PyQt6 import (  # noqa: E402
     QtGui,
     QtWidgets,
 )
-from PyQt6.QtTest import QTest  # noqa: E402
 
 # Quitting closes every visible window, which reaches the "close them all?" guard
 QtWidgets.QMessageBox.question = staticmethod(
@@ -31,18 +34,8 @@ QtWidgets.QMessageBox.question = staticmethod(
 )
 
 
-def until(check, ms=10000):
-    deadline = QtCore.QDeadlineTimer(ms)
-    while not check() and not deadline.hasExpired():
-        QTest.qWait(20)
-    return check()
 
 
-def settings():
-    return QtCore.QSettings(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope,
-        "f95checker", "browser",
-    )
 
 
 def saved():
@@ -63,9 +56,7 @@ def window_(private=False, tabs=True):
 def app_():
     app = QtWidgets.QApplication(sys.argv)
     QtCore.QStandardPaths.setTestModeEnabled(True)
-    QtCore.QSettings.setPath(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
-    )
+    isolate_settings()
     return app
 
 

@@ -113,14 +113,12 @@ class CookieJar(QtNetwork.QNetworkCookieJar):
 
 class WebTab:
 
-    def __init__(self, window: "BrowserWindow", extension: str, icon: QtGui.QIcon):
+    def __init__(self, window: "BrowserWindow"):
         from PyQt6 import (
             QtWebEngineCore,
             QtWebEngineWidgets,
         )
         self.window = window
-        self.extension = extension
-        self.icon = icon
         self.loading = False
         self.probe = False
         self.opener = None
@@ -156,7 +154,7 @@ class WebTab:
         self.page.navigationRequested.connect(self.navigation_requested)
         if window.proxy_auth:
             self.page.proxyAuthenticationRequired.connect(self.proxy_authenticate)
-        if extension:
+        if window.extension:
             # One channel per page, all sharing the window's single RPCProxy
             self.channel = QtWebChannel.QWebChannel(self.view)
             self.channel.registerObject('rpcproxy', window.rpcproxy)
@@ -276,15 +274,10 @@ class WebTab:
     def context_menu(self, pos: QtCore.QPoint):
         menu = self.view.createStandardContextMenu()
         data = self.view.lastContextMenuRequest()
-        if (url := data.linkUrl().url()):
-            if "f95zone.to/threads/" in url:
-                add = QtGui.QAction(self.icon, "Add this link to F95Checker", menu)
-                add.triggered.connect(lambda _: self.add_game(url))
-                menu.addAction(add)
-        elif "f95zone.to/threads/" in (url := self.view.url().url()):
-            add = QtGui.QAction(self.icon, "Add this page to F95Checker", menu)
-            add.triggered.connect(lambda _: self.add_game(url))
-            menu.addAction(add)
+        link = data.linkUrl().url()
+        url, what = (link, "link") if link else (self.view.url().url(), "page")
+        if "f95zone.to/threads/" in url:
+            menu.addAction(self.window.icon, f"Add this {what} to F95Checker").triggered.connect(lambda _: self.add_game(url))
         menu.exec(self.view.mapToGlobal(pos))
 
     @property
@@ -299,14 +292,14 @@ class WebTab:
         # anywhere else, but it declares its helpers with a top-level `var`, which
         # throws on a hardened page like mega.nz that makes its global object
         # non-extensible -- and that page then shows the error to the user
-        if self.extension and "f95zone.to" in self.view.url().host():
-            self.page.runJavaScript(self.extension + suffix)
+        if self.window.extension and "f95zone.to" in self.view.url().host():
+            self.page.runJavaScript(self.window.extension + suffix)
 
     def add_game(self, url: str):
         # Injected on demand rather than relying on inject(): the page you are on can
         # be anything, since you can right click an f95zone thread link on any site
-        if self.extension:
-            self.page.runJavaScript(self.extension + f"\naddGame({url!r});")
+        if self.window.extension:
+            self.page.runJavaScript(self.window.extension + f"\naddGame({url!r});")
 
     def load_started(self):
         self.loading = True
@@ -548,7 +541,6 @@ class TabSidebar(QtWidgets.QWidget):
         self.closer = QtWidgets.QToolButton(self.list.viewport())
         self.closer.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TabCloseButton))
         self.closer.setAutoRaise(True)
-        self.closer.row = -1
         self.closer.hide()
 
         self.closer.clicked.connect(lambda _=None: self.window.close_tab(self.closer.row))
@@ -699,7 +691,6 @@ class BrowserWindow(QtWidgets.QWidget):
     ):
         super().__init__()
         from PyQt6 import QtWebEngineCore
-        self.buttons_enabled = buttons
         self.tabs_enabled = tabs
         self.background_color = background_color
         self.icon = icon
@@ -713,7 +704,6 @@ class BrowserWindow(QtWidgets.QWidget):
         self.blocker = None
         self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
-        self.vertical = False
         # Kept by the browser itself, not the main app: a setting there would be four
         # of upstream's files for a preference only the browser reads and writes.
         # IniFormat, so it sits in the app's own data folder rather than the registry
@@ -806,8 +796,7 @@ class BrowserWindow(QtWidgets.QWidget):
             lambda frm, to: self.tab_list.insert(to, self.tab_list.pop(frm))
         )
         # Connected second, so it runs once tab_list is already back in step
-        self.tabs.tabBar().tabMoved.connect(lambda _, __: self.sidebar.refresh())
-        self.tabs.tabBar().tabMoved.connect(lambda _, __: self.save_session())
+        self.tabs.tabBar().tabMoved.connect(lambda _, __: (self.sidebar.refresh(), self.save_session()))
         # Window resize reaches the tab widget; the tab bar appearing or going away
         # does not, and it moves the page area under the bar
         self.tabs.installEventFilter(self)
@@ -861,7 +850,7 @@ class BrowserWindow(QtWidgets.QWidget):
         return self.current_tab.view
 
     def new_tab(self, url: str = None, background: bool = False, opener: WebTab = None):
-        tab = WebTab(self, self.extension, self.icon)
+        tab = WebTab(self)
         tab.opener = opener
         # A link opens beside the page it came from, not at the far end of the strip,
         # and a run of them off one page stays in the order they were clicked. Ctrl+T
@@ -918,10 +907,10 @@ class BrowserWindow(QtWidgets.QWidget):
             return True
         return super().eventFilter(obj, event)
 
-    def open_dropped(self, urls: list[QtCore.QUrl], to: int):
+    def open_dropped(self, urls: list[QtCore.QUrl], to: int, background: bool = False):
         """Links dropped on either strip, or reopened, each a new tab from index `to` on"""
         for url in urls:
-            tab = self.new_tab(url.toString())
+            tab = self.new_tab(url.toString(), background)
             # tabMoved keeps tab_list in step, same as a drag
             self.tabs.tabBar().moveTab(self.tab_list.index(tab), to)
             to += 1
@@ -997,30 +986,24 @@ class BrowserWindow(QtWidgets.QWidget):
     def restore_session(self):
         """The tabs the last window had open, read before this one saves over them.
         With reopening on startup turned off they wait for Ctrl+Shift+T instead"""
-        if not self.keeps_session:
+        if not self.keeps_session or not (urls := json.loads(self.settings.value("session", "[]"))):
             return
-        urls = json.loads(self.settings.value("session", "[]"))
-        if urls and self.settings.value("restore_tabs", True, type=bool):
-            def reopen():
-                # In front of the clicked link's tab, which stays the one shown
-                for index, url in enumerate(urls):
-                    tab = self.new_tab(url, background=True)
-                    self.tabs.tabBar().moveTab(self.tab_list.index(tab), index)
-            # Once the window is up, though read now, before anything saves over it.
-            # create() runs before open() shows the window, so there is no page on
-            # screen to lend these its size yet, and a page laid out at 100x30 loses
-            # the post it was opened on
-            QtCore.QTimer.singleShot(0, reopen)
-        elif urls:
-            self.closed.append((None, urls))  # None: after every tab, not at a position
+        if self.settings.value("restore_tabs", True, type=bool):
+            # In front of the clicked link's tab, which stays the one shown. Once the
+            # window is up, though read now, before anything saves over it: create() runs
+            # before open() shows the window, so there is no page on screen to lend these
+            # its size yet, and a page laid out at 100x30 loses the post it was opened on
+            urls = [QtCore.QUrl(url) for url in urls]
+            QtCore.QTimer.singleShot(0, lambda: self.open_dropped(urls, 0, background=True))
+        else:
+            self.closed.append((sys.maxsize, urls))  # after every tab, not at a position
 
     def reopen_closed(self):
         if not self.closed:
             return
         index, urls = self.closed.pop()
         # Back where it was, or as near as the tabs closed since allow
-        to = len(self.tab_list) if index is None else min(index, len(self.tab_list))
-        self.open_dropped([QtCore.QUrl(url) for url in urls], to)
+        self.open_dropped([QtCore.QUrl(url) for url in urls], min(index, len(self.tab_list)))
 
     def close_download_tab(self, download):
         # A download link that points off site now gets a tab of its own (see

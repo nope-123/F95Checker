@@ -5,10 +5,14 @@
 # QSettings at a temp folder first, so no run reads or writes the real browser.ini.
 import os
 import sys
-import tempfile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
+from webview_testkit import (
+    isolate_settings,
+    settings,
+    until,
+)
 from modules.webview_window import (
     BrowserWindow,
     FindBar,
@@ -29,20 +33,8 @@ MIDDLE = QtCore.Qt.MouseButton.MiddleButton
 NONE = QtCore.Qt.MouseButton.NoButton
 
 
-def until(check, ms=10000):
-    """QTest.qWaitFor, which PyQt6 does not expose. Polls rather than sleeping a
-    fixed time, so a page that loads fast costs nothing"""
-    deadline = QtCore.QDeadlineTimer(ms)
-    while not check() and not deadline.hasExpired():
-        QTest.qWait(20)
-    return check()
 
 
-def settings():
-    return QtCore.QSettings(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope,
-        "f95checker", "browser",
-    )
 
 
 def window_(tabs=True):
@@ -58,9 +50,7 @@ def window_(tabs=True):
 
 def browser(tabs=True):
     app = QtWidgets.QApplication(sys.argv)
-    QtCore.QSettings.setPath(
-        QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, tempfile.mkdtemp(),
-    )
+    isolate_settings()
     return app, window_(tabs)
 
 
