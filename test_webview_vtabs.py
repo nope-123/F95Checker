@@ -171,6 +171,7 @@ def test_a_window_without_tabs_gets_neither_and_keeps_the_choice():
     assert not login.vertical and not login.sidebar.isVisible(), "a one-page window grew a sidebar"
     assert not login.tabs.tabBar().isVisible(), "a one-page window grew a tab bar"
     assert not login.controls.buttons.vertical.isVisible(), "a one-page window grew the toggle"
+    assert not login.controls.buttons.search.isVisible(), "a one-page window grew tab search"
     assert settings().value("vertical_tabs", type=bool), "a one-page window wrote over the choice"
 
 
@@ -335,6 +336,44 @@ def test_right_click_menu_holds_the_toggle():
     assert not window.vertical, "the sidebar's menu did not turn vertical tabs off"
 
 
+def test_tab_search_drops_down_over_the_top_strip():
+    """With tabs on top, Ctrl+Shift+A has no sidebar to focus, so the sidebar comes out
+    over the page as a popup, and goes back to the splitter once done with"""
+    app, window = browser()
+    opened(window, "a", "b", "c")
+    QTest.qWait(100)
+    sidebar, page = window.sidebar, window.tabs.width()
+    bar = window.tabs.tabBar()
+    window.controls.buttons.search.click()
+    assert sidebar.isWindow() and sidebar.isVisible(), "the search button opened no popup"
+    assert window.tabs.width() == page and bar.isVisible(), "the popup made room instead of floating"
+    assert sidebar.width() == 220, f"the popup is {sidebar.width()} wide, not the sidebar's width"
+    sidebar.search.setText("#c")
+    QTest.keyClick(sidebar.search, QtCore.Qt.Key.Key_Return)
+    assert window.tabs.currentIndex() == 2, f"Enter went to tab {window.tabs.currentIndex()}"
+    assert until(lambda: sidebar.parent() is window.splitter), "the popup never went back"
+    assert not sidebar.isVisible() and not sidebar.search.text(), "the popup went back still showing"
+
+    sidebar.focus_search()  # Ctrl+Shift+A
+    assert sidebar.isWindow() and sidebar.isVisible(), "Ctrl+Shift+A opened no popup"
+    sidebar.search.setText("zzz")
+    sidebar.hide()  # what a click anywhere else does to a popup
+    assert until(lambda: sidebar.parent() is window.splitter), "a click away left it floating"
+    assert not sidebar.search.text(), "a click away kept the query for next time"
+
+    sidebar.focus_search()
+    QTest.qWait(100)
+    mouse(sidebar.list.viewport(), QtCore.QEvent.Type.MouseButtonPress, row_center(window, 0), LEFT, LEFT)
+    mouse(sidebar.list.viewport(), QtCore.QEvent.Type.MouseButtonRelease, row_center(window, 0), LEFT, NONE)
+    assert window.tabs.currentIndex() == 0, "clicking a row did not switch to it"
+    assert until(lambda: sidebar.parent() is window.splitter), "clicking a row left it open"
+
+    window.toggle_vertical()
+    app.processEvents()
+    assert sidebar.isVisible() and sidebar.width() == 220, f"docked back at {sidebar.width()} wide"
+    assert window.splitter.indexOf(sidebar) == 0, "docked back on the wrong side of the page"
+
+
 def test_long_titles_fit_the_sidebar():
     """Every row is as wide as the list, never as wide as its title. A row wider than
     the list scrolls it sideways, and puts the hover x past the edge on every row"""
@@ -384,6 +423,7 @@ if __name__ == "__main__":
         "scroll": test_a_long_list_keeps_its_place_through_updates,
         "search": test_search_filters_by_title_and_url,
         "enter": test_enter_switches_to_the_first_match,
+        "popup": test_tab_search_drops_down_over_the_top_strip,
         "drag": test_dragging_a_row_reorders_the_tabs,
         "filtered": test_dragging_is_off_while_filtered,
         "middle": test_middle_click_closes_without_switching,

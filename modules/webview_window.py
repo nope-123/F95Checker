@@ -545,6 +545,9 @@ class TabSidebar(QtWidgets.QWidget):
 
         self.closer.clicked.connect(lambda _=None: self.window.close_tab(self.closer.row))
         self.list.currentRowChanged.connect(self.row_changed)
+        # In the popup a clicked row is the search done with, as in Chrome's. Not on
+        # currentRowChanged: the arrow keys move that, and would close it a row in
+        self.list.clicked.connect(lambda _: self.isWindow() and self.leave_search())
         self.search.textChanged.connect(lambda _: self.refresh())
         self.search.installEventFilter(self)
         # The viewport, not the list: an item view gets its mouse and drop events there
@@ -590,15 +593,43 @@ class TabSidebar(QtWidgets.QWidget):
             self.window.tabs.setCurrentIndex(row)
 
     def focus_search(self):
-        """Ctrl+Shift+A. Only with the sidebar out: there is no box to focus otherwise"""
-        if self.window.vertical:
-            self.search.setFocus()
-            self.search.selectAll()
+        """Ctrl+Shift+A. With tabs on top there is no sidebar on screen, so it comes out
+        as a popup over the page's left edge, where it would have docked, until done
+        with. Over the page, not beside it: making room would reflow the page"""
+        window = self.window
+        if not window.vertical and not self.isWindow():
+            page = window.tabs.currentWidget()
+            self.setParent(window, QtCore.Qt.WindowType.Popup)
+            self.setGeometry(QtCore.QRect(
+                page.mapToGlobal(QtCore.QPoint(0, 0)),
+                QtCore.QSize(window.settings.value("sidebar_width", 220, type=int), page.height()),
+            ))
+            self.show()
+        self.search.setFocus()
+        self.search.selectAll()
 
     def leave_search(self):
         self.search.clear()
+        if self.isWindow():
+            self.hide()  # the popup, which hideEvent puts back
         if tab := self.window.current_tab:
             tab.view.setFocus()
+
+    def hideEvent(self, event):
+        # A popup closes itself on a click anywhere else, so every way out ends here.
+        # Deferred, because Qt is still in the middle of closing it
+        if self.isWindow():
+            QtCore.QTimer.singleShot(0, self.dock)
+        super().hideEvent(event)
+
+    def dock(self):
+        """Back to the splitter from the popup, for when vertical tabs come on"""
+        self.search.clear()
+        width = self.width()  # the docked width, which focus_search gave the popup
+        self.window.splitter.insertWidget(0, self)  # which resizes it right away
+        # Re-added, the splitter forgets it and would dock it at its size hint
+        self.window.splitter.setSizes([width, 1])
+        self.setVisible(self.window.vertical)
 
     def hover(self, pos: QtCore.QPoint):
         if not (item := self.list.itemAt(pos)):
@@ -739,8 +770,10 @@ class BrowserWindow(QtWidgets.QWidget):
         b.reload = QtWidgets.QPushButton("󰑐", b)
         b.url = QtWidgets.QLineEdit(b)
         b.extension = QtWidgets.QPushButton(icon, "", b)
+        b.search = QtWidgets.QPushButton("\U000f199e", b)  # nf-md-tab_search
+        b.search.setToolTip("Search tabs")
         b.vertical = QtWidgets.QPushButton("", b)  # set_vertical picks the glyph
-        for widget in (b.back, b.forward, b.reload, b.url, b.extension, b.vertical):
+        for widget in (b.back, b.forward, b.reload, b.url, b.extension, b.search, b.vertical):
             b.layout().addWidget(widget)
         if buttons:
             self.controls.layout().addWidget(b)
@@ -769,6 +802,8 @@ class BrowserWindow(QtWidgets.QWidget):
             b.extension.setVisible(False)
         b.vertical.clicked.connect(lambda _=None: self.toggle_vertical())
         b.vertical.setVisible(tabs)  # the one-page windows have no tabs to lay out
+        b.search.clicked.connect(lambda _=None: self.sidebar.focus_search())  # built further down
+        b.search.setVisible(tabs)
 
         self.tabs = QtWidgets.QTabWidget(self)
         # Built right away, before the tab bar's own event filter goes in below: that
