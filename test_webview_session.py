@@ -126,6 +126,20 @@ def test_with_restore_off_they_wait_for_ctrl_shift_t():
     assert names(second) == ["clicked", "a", "b"], names(second)
 
 
+def test_a_lone_tab_waits_for_ctrl_shift_t_too():
+    app = app_()
+    first = window_()
+    opened(first, "a")
+    first.close()
+    second = window_()
+    second.restore_session()
+    second.new_tab("about:blank#clicked")
+    # The restore would land on the first turn of the event loop
+    assert not until(lambda: names(second) != ["clicked"], ms=500), f"restored a lone tab: {names(second)}"
+    second.reopen_closed()
+    assert names(second) == ["clicked", "a"], names(second)
+
+
 def test_ctrl_shift_t_reopens_closed_tabs_where_they_were():
     app = app_()
     window = window_(private=True)  # in memory, so a private window gets it too
@@ -189,6 +203,7 @@ if __name__ == "__main__":
         "private": test_private_and_one_page_windows_save_nothing,
         "restore": test_the_last_tabs_come_back_before_the_new_link,
         "off": test_with_restore_off_they_wait_for_ctrl_shift_t,
+        "lone": test_a_lone_tab_waits_for_ctrl_shift_t_too,
         "reopen": test_ctrl_shift_t_reopens_closed_tabs_where_they_were,
         "notyours": test_tabs_the_browser_closed_itself_are_not_offered,
         "menu": test_right_click_menu_offers_both,

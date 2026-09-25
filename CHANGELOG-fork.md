@@ -1,2 +1,2 @@
-### Added:
-- A tab search button in the browser, next to the vertical tabs one, also on Ctrl+Shift+A. With tabs on top it brings the tab list out over the page to search it
+### Updated:
+- The browser no longer reopens a lone tab on startup, even with reopening tabs on. Ctrl+Shift+T still brings it back

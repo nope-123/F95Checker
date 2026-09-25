@@ -1023,10 +1023,11 @@ class BrowserWindow(QtWidgets.QWidget):
 
     def restore_session(self):
         """The tabs the last window had open, read before this one saves over them.
-        With reopening on startup turned off they wait for Ctrl+Shift+T instead"""
+        With reopening on startup turned off, or just the one tab to reopen, they wait
+        for Ctrl+Shift+T instead"""
         if not self.keeps_session or not (urls := json.loads(self.settings.value("session", "[]"))):
             return
-        if self.settings.value("restore_tabs", True, type=bool):
+        if len(urls) > 1 and self.settings.value("restore_tabs", True, type=bool):
             # In front of the clicked link's tab, which stays the one shown. Once the
             # window is up, though read now, before anything saves over it: create() runs
             # before open() shows the window, so there is no page on screen to lend these
