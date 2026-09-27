@@ -549,6 +549,33 @@ class MainGUI():
                 imgui.io.mouse_pos = (mouse_pos.x, mouse_pos.y)
             return ret
         imgui.input_text_multiline = input_text_multiline
+        # Fix color return types and over/underflow
+        imgui._color_edit3 = imgui.color_edit3
+        def color_edit3(*args, **kwargs):
+            changed, value = imgui._color_edit3(*args, **kwargs)
+            if changed:
+                value = list(value)
+                for i in range(3):
+                    if not isinstance(value[i], float):
+                        value[i] = 0.0
+                    else:
+                        value[i] = min(max(0.0, value[i]), 1.0)
+                value = tuple(value)
+            return (changed, value)
+        imgui.color_edit3 = color_edit3
+        imgui._color_edit4 = imgui.color_edit4
+        def color_edit4(*args, **kwargs):
+            changed, value = imgui._color_edit4(*args, **kwargs)
+            if changed:
+                value = list(value)
+                for i in range(4):
+                    if not isinstance(value[i], float):
+                        value[i] = 0.0
+                    else:
+                        value[i] = min(max(0.0, value[i]), 1.0)
+                value = tuple(value)
+            return (changed, value)
+        imgui.color_edit4 = color_edit4
         # Fix some ID hell
         imgui._button = imgui.button
         def button(*args, **kwargs):
