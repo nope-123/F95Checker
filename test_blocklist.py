@@ -71,8 +71,55 @@ def test_same_site():
     assert not same_site("a.example.com", "b.other.com")
 
 
+def test_ensure_blocklist():
+    import asyncio
+    import contextlib
+    import pathlib
+    import tempfile
+    import types
+    import modules
+    from modules.blocklist import ensure_blocklist
+
+    # A fake GitHub answering If-None-Match the way raw.githubusercontent.com does
+    server = {"status": 200, "etag": '"v1"', "body": (LIST + "\n".join(f"d{i}.test" for i in range(1000))).encode()}
+    sent = []
+
+    @contextlib.asynccontextmanager
+    async def request(method, url, cookies=True, headers={}, **kwargs):
+        assert cookies is False, "F95zone cookies must never go to GitHub"
+        sent.append(headers.get("If-None-Match"))
+        if sent[-1] == server["etag"]:
+            yield b"", types.SimpleNamespace(status=304, headers={})
+        else:
+            yield server["body"], types.SimpleNamespace(status=server["status"], headers={"ETag": server["etag"]})
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # ensure_blocklist imports these lazily, so stubs keep this stdlib-only
+        modules.api = types.SimpleNamespace(request=request)
+        modules.globals = types.SimpleNamespace(data_path=pathlib.Path(tmp), settings=types.SimpleNamespace(browser_adblock=True))
+        path = pathlib.Path(tmp) / "blocklist.txt"
+        check = lambda: asyncio.run(ensure_blocklist())
+
+        check()
+        assert sent[-1] is None and path.read_bytes() == server["body"], "first run must download"
+        v1 = server["body"]
+        check()
+        assert sent[-1] == '"v1"' and path.read_bytes() == v1, "unchanged list must be a conditional request"
+        server.update(etag='"v2"', body=v1 + b"\nnew.test")
+        check()
+        assert sent[-1] == '"v1"' and path.read_bytes() == server["body"], "changed list must be downloaded"
+        path.unlink()
+        check()
+        assert sent[-1] is None and path.is_file(), "a deleted list must come back even with a matching ETag"
+        v2 = server["body"]
+        server.update(status=404, etag='"v3"', body=b"404: Not Found")
+        check()
+        assert path.read_bytes() == v2 and (path.with_suffix(".etag")).read_text() == '"v2"', "an error page must not replace the list"
+
+
 if __name__ == "__main__":
     test_parse_blocklist()
     test_blocked()
     test_same_site()
+    test_ensure_blocklist()
     print("ok")

@@ -1,5 +1,3 @@
-import time
-
 BLOCKLIST_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt"
 
 # Sanity floor for a downloaded blocklist: the real list carries ~220,000
@@ -58,14 +56,23 @@ async def ensure_blocklist():
     if not globals.settings.browser_adblock:
         return
     path = blocklist_path()
-    if path.is_file() and time.time() - path.stat().st_mtime < 7 * 86400:
-        return
+    etag_path = path.with_suffix(".etag")
     try:
+        # GitHub's ETag is a hash of the list, so while it still matches the server
+        # answers 304 with no body and nothing is downloaded. Only sent while the list
+        # is on disk: a deleted list has to come back even if it never changed.
+        # Kept as GitHub sent it, never hashed locally: it is not the file's SHA-256,
+        # and the gzipped response carries a different one
+        headers = {}
+        if path.is_file() and etag_path.is_file():
+            headers["If-None-Match"] = etag_path.read_text()
         # cookies=False is mandatory: api.request defaults to attaching
         # globals.cookies, which would leak F95zone session cookies to GitHub.
         # The explicit timeout overrides request_timeout, tuned for small calls.
-        data = await api.fetch("GET", BLOCKLIST_URL, cookies=False, timeout=120)
-        if data and len(parse_blocklist(data.decode(errors="replace"))) >= MIN_BLOCKLIST_ENTRIES:
-            path.write_bytes(data)
+        async with api.request("GET", BLOCKLIST_URL, cookies=False, timeout=120, headers=headers) as (data, res):
+            if res.status == 200 and len(parse_blocklist(data.decode(errors="replace"))) >= MIN_BLOCKLIST_ENTRIES:
+                # List first: dying in between leaves the old ETag, so it just downloads again
+                path.write_bytes(data)
+                etag_path.write_text(res.headers.get("ETag", ""))
     except Exception:
         pass  # a nicety, never surface and never block

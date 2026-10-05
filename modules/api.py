@@ -1176,6 +1176,8 @@ async def check_upstream():
 async def check_updates():
     with contextlib.suppress(Exception):
         await check_upstream()  # Never let this get in the way of the actual update check
+    from modules import blocklist
+    async_thread.run(blocklist.ensure_blocklist())  # Background, a 4MB download must not hold up the popup
     if (globals.self_path / ".git").is_dir():
         return  # Running from git repo, skip update
     res = None

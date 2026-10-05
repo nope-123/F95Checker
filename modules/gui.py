@@ -4615,7 +4615,8 @@ class MainGUI():
             draw_settings_label(
                 "Block ads:",
                 "Blocks ads, trackers and malware domains in the integrated browser, using HaGeZi's Pro DNS blocklist. "
-                "The list is downloaded in the background and refreshed weekly."
+                "The list is checked in the background at startup and with every app update check, and only downloaded "
+                "again when it has changed."
             )
             if draw_settings_checkbox("browser_adblock"):
                 async_thread.run(blocklist.ensure_blocklist())
