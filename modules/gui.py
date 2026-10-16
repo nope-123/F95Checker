@@ -1132,7 +1132,7 @@ class MainGUI():
                             elif self.bg_mode_notifs_timer and time.time() > self.bg_mode_notifs_timer:
                                 # Run scheduled notif check
                                 self.bg_mode_notifs_timer = None
-                                utils.start_refresh_task(api.check_notifs(standalone=True), reset_bg_timers=False, notify_new_games=False)
+                                utils.start_refresh_task(api.check_notifs(standalone=True), reset_bg_timers=False)
                     # Wait idle time
                     if self.tray.menu_open:
                         time.sleep(1 / 60)
@@ -2095,11 +2095,11 @@ class MainGUI():
             category_open = False
             imgui.push_text_wrap_pos(full_width)
             imgui.indent(indent)
-            for game_i, id in enumerate(globals.updated_games_sorted_ids):
+            for game_i, id in enumerate(globals.updates_sorted_ids):
                 if id not in globals.games:
-                    globals.updated_games_sorted_ids.remove(id)
+                    globals.updates_sorted_ids.remove(id)
                     continue
-                old_game = globals.updated_games[id]
+                old_game = globals.updates[id]
                 game = globals.games[id]
                 if category is not game.type.category:
                     category = game.type.category
@@ -2175,7 +2175,7 @@ class MainGUI():
                 imgui.same_line()
                 self.draw_game_copy_link_button(game, f"{icons.content_copy} Link")
                 imgui.same_line()
-                self.draw_game_more_info_button(game, f"{icons.information_outline} Info", carousel_ids=globals.updated_games_sorted_ids)
+                self.draw_game_more_info_button(game, f"{icons.information_outline} Info", carousel_ids=globals.updates_sorted_ids)
 
                 imgui.end_group()
                 height = imgui.get_item_rect_size().y + imgui.style.item_spacing.y
@@ -2183,12 +2183,12 @@ class MainGUI():
                 imgui.set_cursor_pos((img_pos_x, img_pos_y))
                 game.image.render(width, height, *crop, rounding=self.scaled(globals.settings.style_corner_radius))
 
-                if game_i != len(globals.updated_games_sorted_ids) - 1:
+                if game_i != len(globals.updates_sorted_ids) - 1:
                     imgui.text("\n")
             imgui.unindent(indent)
             imgui.pop_text_wrap_pos()
         opened, closed = utils.popup(
-            f"{len(globals.updated_games_sorted_ids)} update{'' if len(globals.updated_games_sorted_ids) == 1 else 's'}",
+            f"{len(globals.updates_sorted_ids)} update{'' if len(globals.updates_sorted_ids) == 1 else 's'}",
             popup_content,
             buttons=True,
             closable=True,
@@ -2196,8 +2196,71 @@ class MainGUI():
             popup_uuid=popup_uuid
         )
         if closed:
-            globals.updated_games_sorted_ids.clear()
-            globals.updated_games.clear()
+            globals.updates_sorted_ids.clear()
+            globals.updates.clear()
+        return opened, closed
+
+    def draw_api_errors_popup(self, popup_uuid: str = ""):
+        api_errors_count = sum(len(ids) for ids in globals.api_errors.values())
+        opened, closed = msgbox.msgbox(
+            f"API error{'' if api_errors_count == 1 else 's'}",
+            f"The F95Checker Cache API returned {'an error' if api_errors_count == 1 else 'some errors'}.\n"
+            "\n"
+            "The last data that the API had cached has been saved where possible.\n"
+            "This is just a warning that the Cache API has had issues caching\n"
+            "these threads, so the data you're seeing might be more out of date\n"
+            "than usual.\n"
+            "\n"
+            "This is typically due to F95zone downtime or elevated traffic and\n"
+            "usually resolves itself after a while.",
+            MsgBox.warn,
+            more="\n\n".join(
+                f"{api_error}:\n" + "\n".join(f"- {globals.games[id].name}" for id in ids if id in globals.games)
+                for api_error, ids in globals.api_errors.items()
+            ),
+            popup_uuid=popup_uuid
+        )
+        if closed:
+            globals.api_errors.clear()
+        return opened, closed
+
+    def draw_missing_threads_popup(self, popup_uuid: str = ""):
+        missing_threads_count = len(globals.missing_threads)
+        def _convert_games():
+            for id in globals.missing_threads:
+                if not (game := globals.games[id]):
+                    continue
+                callbacks.convert_f95zone_to_custom(game)
+        def _archive_games():
+            for id in globals.missing_threads:
+                if not (game := globals.games[id]):
+                    continue
+                game.archived = True
+                game.updated = False
+        buttons = {
+            f"{icons.cancel} Do nothing": None,
+            f"{icons.trash_can_outline} Remove": lambda: callbacks.remove_game(*(globals.games[id] for id in globals.missing_threads if id in globals.games)),
+            f"{icons.puzzle_outline} Convert": _convert_games,
+            f"{icons.archive_outline} Archive": _archive_games,
+        }
+        opened, closed = msgbox.msgbox(
+            f"Thread{'' if missing_threads_count == 1 else 's'} not found",
+            f"The F95zone thread{'' if missing_threads_count == 1 else 's'} for {'this game' if missing_threads_count == 1 else 'these games'} could not be found:\n"
+            + "\n".join(f"- {globals.games[id].name}" for id in globals.missing_threads if id in globals.games) + "\n"
+            "\n"
+            f"{'It' if missing_threads_count == 1 else 'They'} might have been privated, moved or deleted, maybe for breaking forum rules.\n"
+            "\n"
+            f"You can remove {'this game' if missing_threads_count == 1 else 'these games'} from your library, convert {'it' if missing_threads_count == 1 else 'them'} to custom, or archive {'it' if missing_threads_count == 1 else 'them'}.\n"
+            "Custom games are untied from F95zone and are not checked for updates, so you won't\n"
+            "get this error anymore. You can later convert them back to F95zone games from their info\n"
+            "popup. You can also find more details there.\n"
+            "Archiving will mute this error, but it will come back if you unarchive later on.",
+            MsgBox.warn,
+            buttons=buttons,
+            popup_uuid=popup_uuid
+        )
+        if closed:
+            globals.missing_threads.clear()
         return opened, closed
 
     def draw_game_image_error(self, game: Game, image: imagehelper.ImageHelper, width: float, height: float):
@@ -5137,9 +5200,9 @@ class MainGUI():
                         outside=False
                     )
                 if imgui.button("F95 bookmarks", width=-offset):
-                    utils.start_refresh_task(api.import_f95_bookmarks(), reset_bg_timers=False, notify_new_games=False)
+                    utils.start_refresh_task(api.import_f95_bookmarks(), reset_bg_timers=False)
                 if imgui.button("F95 watched threads", width=-offset):
-                    utils.start_refresh_task(api.import_f95_watched_threads(), reset_bg_timers=False, notify_new_games=False)
+                    utils.start_refresh_task(api.import_f95_watched_threads(), reset_bg_timers=False)
                 if imgui.button("Browser bookmarks", width=-offset):
                     def callback(selected):
                         if selected:

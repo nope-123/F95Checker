@@ -737,7 +737,7 @@ def convert_custom_to_f95zone(game: Game):
     game.status = Status.Unchecked
 
 
-def remove_game(*games: list[Game], bypass_confirm=False):
+def remove_game(*games: Game, bypass_confirm=False):
     def remove_callback():
         for game in games:
             id = game.id

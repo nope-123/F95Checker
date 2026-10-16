@@ -1,2 +1,4 @@
+## ⬆️ From upstream
 ### Updated:
-- The adblock list now checks for changes at every startup and with every app update check, and only downloads again when it has actually changed, instead of re-downloading once a week
+- API errors and missing threads found during a refresh now show up grouped in one popup each, instead of one popup per game
+- When the Cache API reports an error for a thread, the last data it had cached is still saved

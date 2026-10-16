@@ -414,21 +414,12 @@ def raise_api_error(res: bytes | dict):
         )):
             raise msgbox.Exc(
                 "Server downtime",
-                "F95Checker Cache API is currently unreachable,\n"
+                "The F95Checker Cache API is currently unreachable,\n"
                 "please retry in a few minutes.",
                 MsgBox.warn
             )
         return True
     elif isinstance(res, dict):
-        if index_error := res.get("INDEX_ERROR"):
-            # TODO: make graceful, collect to a list and show at refresh end
-            more = json.dumps(res, indent=4)
-            raise msgbox.Exc(
-                "API error",
-                f"The F95Checker Cache API returned error '{index_error}'.",
-                MsgBox.error,
-                more=more
-            )
         return True
 
 
@@ -819,7 +810,7 @@ def last_check_before(before_version: str, checked_version: str):
     return is_before
 
 
-async def fast_check(games: list[Game], full=False):
+async def fast_check(games: list[Game], full: bool, updates: dict[int, OldGame], api_errors: dict[int, str], missing_threads: list[int]):
     games = list(filter(lambda game: not game.custom, games))
 
     global fast_checks_counter
@@ -875,7 +866,7 @@ async def fast_check(games: list[Game], full=False):
 
     tasks: list[asyncio.Task] = []
     try:
-        tasks = [asyncio.create_task(full_check(game, ts)) for game, ts in full_queue]
+        tasks = [asyncio.create_task(full_check(game, ts, updates, api_errors, missing_threads)) for game, ts in full_queue]
         await asyncio.gather(*tasks)
     except Exception:
         for task in tasks:
@@ -883,191 +874,179 @@ async def fast_check(games: list[Game], full=False):
         raise
 
 
-async def full_check(game: Game, last_changed: int):
+async def full_check(game: Game, last_changed: int, updates: dict[int, OldGame], api_errors: dict[int, str], missing_threads: list[int]):
     async with full_checks_counter, full_checks_sem:
 
         async with request("GET", api_full_check_url.format(id=game.id, ts=last_changed), timeout=globals.settings.request_timeout * 2, cookies=False) as (res, req):
             raise_api_error(res)
-            if req.status in (403, 404):
-                if not game.archived:
-                    def _archive_game(game: Game):
-                        game.archived = True
-                        game.updated = False
-                    buttons = {
-                        f"{icons.cancel} Do nothing": None,
-                        f"{icons.trash_can_outline} Remove": lambda: callbacks.remove_game(game, bypass_confirm=True),
-                        f"{icons.puzzle_outline} Convert": lambda: callbacks.convert_f95zone_to_custom(game),
-                        f"{icons.archive_outline} Archive": lambda: _archive_game(game),
-                    }
-                    utils.push_popup(
-                        msgbox.msgbox, "Thread not found",
-                        "The F95zone thread for this game could not be found:\n"
-                        f"{game.name}\n"
-                        "It might have been privated, moved or deleted, maybe for breaking forum rules.\n"
-                        "\n"
-                        "You can remove this game from your library, convert it to a custom game, or archive it.\n"
-                        "Custom games are untied from F95zone and are not checked for updates, so you won't\n"
-                        "get this error anymore. You can later convert it back to an F95zone game from its info\n"
-                        "popup. You can also find more details there.\n"
-                        "Archiving the game will mute this error, but it will come back if you unarchive later on.",
-                        MsgBox.error,
-                        buttons=buttons
-                    )
-                globals.refresh_progress += 1
-                return
             thread = json.loads(res)
             raise_api_error(thread)
             url = f95_threads_page + str(game.id)
 
-        # Redis only allows string values, so API only gives str for simplicity
-        try:
-            thread["type"] = Type(int(thread["type"]))
-        except ValueError:
-            thread["type"] = Type.Unknown
-        try:
-            thread["status"] = Status(int(thread["status"]))
-        except ValueError:
-            thread["status"] = Status.Unknown
-        thread["last_updated"] = int(thread["last_updated"])
-        thread["score"] = float(thread["score"])
-        thread["votes"] = int(thread["votes"])
-        thread["tags"] = json.loads(thread["tags"])
-        for i in range(len(thread["tags"])):
+        api_error = thread.get("INDEX_ERROR")
+
+        # If there is thread data, regardless of cache api errors, save it
+        if "name" in thread:
+            # Redis only allows string values, so API only gives str for simplicity
             try:
-                thread["tags"][i] = Tag(thread["tags"][i])
+                thread["type"] = Type(int(thread["type"]))
             except ValueError:
-                thread["tags"][i] = Tag.unknown
-        thread["tags"] = tuple(thread["tags"])
-        thread["unknown_tags"] = json.loads(thread["unknown_tags"])
-        thread["downloads"] = json.loads(thread["downloads"])
-        for _, links in thread["downloads"]:
-            for link_i, link_pair in enumerate(links):
-                links[link_i] = tuple(link_pair)
-        thread["previews_urls"] = json.loads(thread.get("previews_urls", "[]"))
-        thread["downloads"] = tuple(thread["downloads"])
-        thread["reviews_total"] = int(thread.get("reviews_total", "0"))
-        thread["reviews"] = json.loads(thread.get("reviews", "[]"))
-        thread["reviews"] = [Review(**review) for review in thread["reviews"]]
+                thread["type"] = Type.Unknown
+            try:
+                thread["status"] = Status(int(thread["status"]))
+            except ValueError:
+                thread["status"] = Status.Unknown
+            thread["last_updated"] = int(thread["last_updated"])
+            thread["score"] = float(thread["score"])
+            thread["votes"] = int(thread["votes"])
+            thread["tags"] = json.loads(thread["tags"])
+            for i in range(len(thread["tags"])):
+                try:
+                    thread["tags"][i] = Tag(thread["tags"][i])
+                except ValueError:
+                    thread["tags"][i] = Tag.unknown
+            thread["tags"] = tuple(thread["tags"])
+            thread["unknown_tags"] = json.loads(thread["unknown_tags"])
+            thread["downloads"] = json.loads(thread["downloads"])
+            for _, links in thread["downloads"]:
+                for link_i, link_pair in enumerate(links):
+                    links[link_i] = tuple(link_pair)
+            thread["previews_urls"] = json.loads(thread.get("previews_urls", "[]"))
+            thread["downloads"] = tuple(thread["downloads"])
+            thread["reviews_total"] = int(thread.get("reviews_total", "0"))
+            thread["reviews"] = json.loads(thread.get("reviews", "[]"))
+            thread["reviews"] = [Review(**review) for review in thread["reviews"]]
 
-        old_name = game.name
-        old_version = game.version
-        old_status = game.status
+            old_name = game.name
+            old_version = game.version
+            old_status = game.status
 
-        version = thread["version"]
-        if not version:
-            version = "N/A"
-
-        if old_status is not Status.Unchecked:
-            if game.developer != thread["developer"]:
-                game.add_timeline_event(TimelineEventType.ChangedDeveloper, game.developer, thread["developer"])
-
-            if game.type != thread["type"]:
-                game.add_timeline_event(TimelineEventType.ChangedType, game.type.name, thread["type"].name)
-
-            if game.tags != thread["tags"]:
-                if difference := [tag.text for tag in thread["tags"] if tag not in game.tags]:
-                    game.add_timeline_event(TimelineEventType.TagsAdded, ", ".join(difference))
-                if difference := [tag.text for tag in game.tags if tag not in thread["tags"]]:
-                    game.add_timeline_event(TimelineEventType.TagsRemoved, ", ".join(difference))
-
-            if game.score != thread["score"]:
-                if game.score < thread["score"]:
-                    game.add_timeline_event(TimelineEventType.ScoreIncreased, game.score, game.votes, thread["score"], thread["votes"])
-                else:
-                    game.add_timeline_event(TimelineEventType.ScoreDecreased, game.score, game.votes, thread["score"], thread["votes"])
-
-        breaking_name_parsing    = last_check_before("9.6.4",  game.last_check_version)  # Skip name change in update popup
-        breaking_version_parsing = last_check_before("10.1.1", game.last_check_version)  # Skip update popup and keep installed/finished checkboxes
-        breaking_keep_old_image  = last_check_before("9.0",    game.last_check_version)  # Keep existing image files
-
-        last_full_check = last_changed
-        last_check_version = globals.version
-
-        # Skip update popup and don't reset finished/installed checkboxes if refreshing with braking changes
-        finished = game.finished
-        installed = game.installed
-        updated = game.updated
-        if breaking_version_parsing or old_status is Status.Unchecked:
-            if old_version == finished:
-                finished = version  # Is breaking and was previously finished, mark again as finished
-            if old_version == installed:
-                installed = version  # Is breaking and was previously installed, mark again as installed
-            old_version = version  # Don't include version change in popup for simple parsing adjustments
-        else:
-            if version != old_version:
-                if not game.archived:
-                    updated = True
-
-        # Don't include name change in popup for simple parsing adjustments
-        if breaking_name_parsing:
-            old_name = thread["name"]
-
-        fetch_image = game.image.missing
-        if game.image_url != "custom" and not breaking_keep_old_image:
-            fetch_image = fetch_image or (thread["image_url"] != game.image_url)
-
-        unknown_tags_flag = game.unknown_tags_flag
-        if len(thread["unknown_tags"]) > 0 and game.unknown_tags != thread["unknown_tags"]:
-            unknown_tags_flag = True
-
-        async def update_game():
-            game.name = thread["name"]
-            game.version = version
-            game.developer = thread["developer"]
-            game.type = thread["type"]
-            game.status = thread["status"]
-            game.url = url
-            game.last_updated = thread["last_updated"]
-            game.last_full_check = last_full_check
-            game.last_check_version = last_check_version
-            game.score = thread["score"]
-            game.votes = thread["votes"]
-            game.finished = finished
-            game.installed = installed
-            game.updated = updated
-            game.description = thread["description"]
-            game.changelog = thread["changelog"]
-            game.tags = thread["tags"]
-            game.unknown_tags = thread["unknown_tags"]
-            game.unknown_tags_flag = unknown_tags_flag
-            if fetch_image:
-                game.image_url = thread["image_url"]
-            game.previews_urls = thread["previews_urls"]
-            game.downloads = thread["downloads"]
-            game.reviews_total = thread["reviews_total"]
-            game.reviews = thread["reviews"]
-
-            changed_name = thread["name"] != old_name
-            changed_status = thread["status"] != old_status
-            changed_version = version != old_version
+            version = thread["version"]
+            if not version:
+                version = "N/A"
 
             if old_status is not Status.Unchecked:
-                if changed_name:
-                    game.add_timeline_event(TimelineEventType.ChangedName, old_name, game.name)
-                if changed_status:
-                    game.add_timeline_event(TimelineEventType.ChangedStatus, old_status.name, game.status.name)
-                if changed_version:
-                    game.add_timeline_event(TimelineEventType.ChangedVersion, old_version, game.version)
+                if game.developer != thread["developer"]:
+                    game.add_timeline_event(TimelineEventType.ChangedDeveloper, game.developer, thread["developer"])
 
-            if not game.archived and old_status is not Status.Unchecked and (
-                changed_name or changed_status or changed_version
-            ):
-                old_game = OldGame(
-                    id=game.id,
-                    name=old_name,
-                    version=old_version,
-                    status=old_status,
-                )
-                globals.new_updated_games[game.id] = old_game
+                if game.type != thread["type"]:
+                    game.add_timeline_event(TimelineEventType.ChangedType, game.type.name, thread["type"].name)
 
-        if fetch_image and thread["image_url"] and thread["image_url"].startswith("http"):
-            data, thread["image_url"] = await download_image(thread["image_url"])
-            async def set_image_and_update_game():
-                await game.set_image_async(data)
-                await update_game()
-            await asyncio.shield(set_image_and_update_game())
-        else:
-            await asyncio.shield(update_game())
+                if game.tags != thread["tags"]:
+                    if difference := [tag.text for tag in thread["tags"] if tag not in game.tags]:
+                        game.add_timeline_event(TimelineEventType.TagsAdded, ", ".join(difference))
+                    if difference := [tag.text for tag in game.tags if tag not in thread["tags"]]:
+                        game.add_timeline_event(TimelineEventType.TagsRemoved, ", ".join(difference))
+
+                if game.score != thread["score"]:
+                    if game.score < thread["score"]:
+                        game.add_timeline_event(TimelineEventType.ScoreIncreased, game.score, game.votes, thread["score"], thread["votes"])
+                    else:
+                        game.add_timeline_event(TimelineEventType.ScoreDecreased, game.score, game.votes, thread["score"], thread["votes"])
+
+            breaking_name_parsing    = last_check_before("9.6.4",  game.last_check_version)  # Skip name change in update popup
+            breaking_version_parsing = last_check_before("10.1.1", game.last_check_version)  # Skip update popup and keep installed/finished checkboxes
+            breaking_keep_old_image  = last_check_before("9.0",    game.last_check_version)  # Keep existing image files
+
+            last_full_check = last_changed
+            last_check_version = globals.version
+
+            # Skip update popup and don't reset finished/installed checkboxes if refreshing with braking changes
+            finished = game.finished
+            installed = game.installed
+            updated = game.updated
+            if breaking_version_parsing or old_status is Status.Unchecked:
+                if old_version == finished:
+                    finished = version  # Is breaking and was previously finished, mark again as finished
+                if old_version == installed:
+                    installed = version  # Is breaking and was previously installed, mark again as installed
+                old_version = version  # Don't include version change in popup for simple parsing adjustments
+            else:
+                if version != old_version:
+                    if not game.archived:
+                        updated = True
+
+            # Don't include name change in popup for simple parsing adjustments
+            if breaking_name_parsing:
+                old_name = thread["name"]
+
+            fetch_image = game.image.missing
+            if game.image_url != "custom" and not breaking_keep_old_image:
+                fetch_image = fetch_image or (thread["image_url"] != game.image_url)
+
+            unknown_tags_flag = game.unknown_tags_flag
+            if len(thread["unknown_tags"]) > 0 and game.unknown_tags != thread["unknown_tags"]:
+                unknown_tags_flag = True
+
+            async def update_game():
+                game.name = thread["name"]
+                game.version = version
+                game.developer = thread["developer"]
+                game.type = thread["type"]
+                game.status = thread["status"]
+                game.url = url
+                game.last_updated = thread["last_updated"]
+                # If there was a cache api error, don't update full check timestamp, so it will be
+                # retried and show the warning on next refresh until error is gone
+                if not api_error:
+                    game.last_full_check = last_full_check
+                game.last_check_version = last_check_version
+                game.score = thread["score"]
+                game.votes = thread["votes"]
+                game.finished = finished
+                game.installed = installed
+                game.updated = updated
+                game.description = thread["description"]
+                game.changelog = thread["changelog"]
+                game.tags = thread["tags"]
+                game.unknown_tags = thread["unknown_tags"]
+                game.unknown_tags_flag = unknown_tags_flag
+                if fetch_image:
+                    game.image_url = thread["image_url"]
+                game.previews_urls = thread["previews_urls"]
+                game.downloads = thread["downloads"]
+                game.reviews_total = thread["reviews_total"]
+                game.reviews = thread["reviews"]
+
+                changed_name = thread["name"] != old_name
+                changed_status = thread["status"] != old_status
+                changed_version = version != old_version
+
+                if old_status is not Status.Unchecked:
+                    if changed_name:
+                        game.add_timeline_event(TimelineEventType.ChangedName, old_name, game.name)
+                    if changed_status:
+                        game.add_timeline_event(TimelineEventType.ChangedStatus, old_status.name, game.status.name)
+                    if changed_version:
+                        game.add_timeline_event(TimelineEventType.ChangedVersion, old_version, game.version)
+
+                if not game.archived and old_status is not Status.Unchecked and (
+                    changed_name or changed_status or changed_version
+                ):
+                    old_game = OldGame(
+                        id=game.id,
+                        name=old_name,
+                        version=old_version,
+                        status=old_status,
+                    )
+                    updates[game.id] = old_game
+
+            if fetch_image and thread["image_url"] and thread["image_url"].startswith("http"):
+                data, thread["image_url"] = await download_image(thread["image_url"])
+                async def set_image_and_update_game():
+                    await game.set_image_async(data)
+                    await update_game()
+                await asyncio.shield(set_image_and_update_game())
+            else:
+                await asyncio.shield(update_game())
+
+        if api_error:
+            if api_error == "THREAD_MISSING":
+                if not game.archived:
+                    missing_threads.append(game.id)
+            else:
+                api_errors[game.id] = api_error
+
         globals.refresh_progress += 1
 
 
@@ -1414,7 +1393,7 @@ try {{
         )
 
 
-async def refresh(*games: list[Game], full=False, notifs=True, force_archived=False, force_completed=False):
+async def refresh(*games: Game, full=False, notifs=True, force_archived=False, force_completed=False):
     fast_queue: list[list[Game]] = [[]]
     for game in (games or globals.games.values()):
         if game.custom:
@@ -1432,6 +1411,9 @@ async def refresh(*games: list[Game], full=False, notifs=True, force_archived=Fa
     notifs = notifs and globals.settings.check_notifs
     globals.refresh_progress += 1
     globals.refresh_total += sum(len(chunk) for chunk in fast_queue) + bool(notifs)
+    updates: dict[int, OldGame] = {}
+    api_errors: dict[int, str] = {}
+    missing_threads: list[int] = []
 
     global fast_checks_sem, full_checks_sem, fast_checks_counter
     fast_checks_sem = asyncio.Semaphore(1)
@@ -1439,7 +1421,7 @@ async def refresh(*games: list[Game], full=False, notifs=True, force_archived=Fa
     fast_checks_counter = 0
     tasks: list[asyncio.Task] = []
     try:
-        tasks = [asyncio.create_task(fast_check(chunk, full=full)) for chunk in fast_queue]
+        tasks = [asyncio.create_task(fast_check(chunk, full, updates, api_errors, missing_threads)) for chunk in fast_queue]
         await asyncio.gather(*tasks)
     except Exception:
         for task in tasks:
@@ -1451,6 +1433,54 @@ async def refresh(*games: list[Game], full=False, notifs=True, force_archived=Fa
     fast_checks_sem = None
     full_checks_sem = None
     fast_checks_counter = 0
+
+    # Close previous instances of these single-instance popups
+    for popup in globals.popup_stack:
+        if popup.func in (
+            type(globals.gui).draw_updates_popup,
+            type(globals.gui).draw_api_errors_popup,
+            type(globals.gui).draw_missing_threads_popup,
+        ):
+            globals.popup_stack.remove(popup)
+            globals.popup_stack_changed = True
+
+    if updates or globals.updates:
+        if updates:
+            # Merge with previous updates, eg in case of multiple refreshes in background
+            globals.updates.update(updates)
+            first = list(updates.keys())[0]
+        else:
+            first = list(globals.updates.keys())[0]
+        globals.updates_sorted_ids = sorted(globals.updates.keys(), key=lambda id: globals.games[id].type.category.value)
+        utils.push_popup(type(globals.gui).draw_updates_popup, globals.gui).uuid = "updates"
+        if globals.gui.hidden or not globals.gui.focused:
+            image = None
+            if globals.settings.notifs_show_update_banner:
+                image_paths = list(filter(lambda f: f.suffix != ".zst", globals.images_path.glob(f"{first}.*")))
+                if image_paths:
+                    image = desktop_notifier.Attachment(path=image_paths[0])
+            count = len(globals.updates)
+            notification_proc.notify(
+                title="Updates",
+                msg=f"{count} item{'' if count == 1 else 's'} in your library {'has' if count == 1 else 'have'} received updates!",
+                attachment=image,
+            )
+
+    # Don't merge with previous errors, we only care about latest ones,
+    # previous errors might have disappeared since then
+    globals.api_errors.clear()
+    globals.missing_threads.clear()
+
+    for id, api_error in api_errors.items():
+        if api_error not in globals.api_errors:
+            globals.api_errors[api_error] = set()
+        globals.api_errors[api_error].add(id)
+    if globals.api_errors:
+        utils.push_popup(type(globals.gui).draw_api_errors_popup, globals.gui).uuid = "api_errors"
+
+    globals.missing_threads.update(missing_threads)
+    if globals.missing_threads:
+        utils.push_popup(type(globals.gui).draw_missing_threads_popup, globals.gui).uuid = "missing_threads"
 
     if notifs:
         await check_notifs(standalone=False)
