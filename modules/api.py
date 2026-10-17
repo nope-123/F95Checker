@@ -274,8 +274,8 @@ async def request(method: str, url: str, read=True, cookies: dict = True, **kwar
         with f95_ratelimit_sleeping:
             ratelimit_sleep += 5
             await asyncio.sleep(ratelimit_sleep)
-    if is_forum_request and webview.user_agent:
-        headers["User-Agent"] = webview.user_agent
+    if is_forum_request and (webview_user_agent := await webview.get_user_agent()):
+        headers["User-Agent"] = webview_user_agent
     req_opts = dict(
         timeout=timeout,
         allow_redirects=True,

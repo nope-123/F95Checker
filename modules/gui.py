@@ -360,11 +360,6 @@ class MainGUI():
 
         # Setup Qt objects
         self.qt_app = QtWidgets.QApplication(sys.argv)
-        try:
-            from PyQt6 import QtWebEngineCore
-            webview.user_agent = QtWebEngineCore.QWebEngineProfile(None, None).httpUserAgent()
-        except Exception:
-            pass
         self.tray = TrayIcon(self)
 
         # Setup ImGui

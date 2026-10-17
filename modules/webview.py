@@ -14,7 +14,8 @@ from modules.webview_window import (
     watch_stdin,
 )
 
-user_agent: str = None
+_user_agent = None
+_user_agent_set = False
 
 # Qt WebEngine doesn't like running alongside other OpenGL
 # applications so we need to run a dedicated multiprocess
@@ -33,6 +34,26 @@ def show_front(window):
     window.show()
     window.raise_()
     window.activateWindow()
+
+
+async def get_user_agent():
+    global _user_agent, _user_agent_set
+    if not _user_agent_set:
+        try:
+            with await start(
+                "user_agent",
+                use_f95_cookies=False,
+                buttons=False,
+                extension=False,
+                private=True,
+                proxy_config=None,
+                pipe=True,
+            ) as pipe:
+                _user_agent = await pipe.get_async()
+        except Exception:
+            pass
+        _user_agent_set = True
+    return _user_agent
 
 
 async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=False, **kwargs):
@@ -249,3 +270,9 @@ def solve_captcha(url: str, title_search: str, **kwargs):
     app.window.webview.setUrl(QtCore.QUrl(url))
     show_front(app.window)
     app.exec()
+
+
+def user_agent(**kwargs):
+    app = create(**kwargs)
+    app.pipe.put(app.window.webview.profile.httpUserAgent())
+    app.exit(0)
