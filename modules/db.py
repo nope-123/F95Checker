@@ -193,6 +193,7 @@ async def connect():
         table_name="settings",
         columns={
             "_":                           f'INTEGER PRIMARY KEY CHECK (_=0)',
+            "app_beta_updates":            f'INTEGER DEFAULT {int(False)}',
             "background_on_close":         f'INTEGER DEFAULT {int(False)}',
             "bg_notifs_interval":          f'INTEGER DEFAULT 15',
             "bg_refresh_interval":         f'INTEGER DEFAULT 30',
@@ -222,6 +223,7 @@ async def connect():
             "ext_icon_glow":               f'INTEGER DEFAULT {int(True)}',
             "filter_all_tabs":             f'INTEGER DEFAULT {int(False)}',
             "fit_images":                  f'INTEGER DEFAULT {int(False)}',
+            "github_token":                f'TEXT    DEFAULT ""',
             "grid_columns":                f'INTEGER DEFAULT 3',
             "hidden_timeline_events":      f'TEXT    DEFAULT "[]"',
             "hide_empty_tabs":             f'INTEGER DEFAULT {int(False)}',
@@ -599,7 +601,7 @@ async def update_game_id(game: Game, new_id):
     game.refresh_image()
 
 
-async def update_game(game: Game, *keys: list[str]):
+async def update_game(game: Game, *keys: str):
     values = []
 
     for key in keys:
@@ -614,7 +616,7 @@ async def update_game(game: Game, *keys: list[str]):
     """, tuple(values))
 
 
-async def update_settings(*keys: list[str]):
+async def update_settings(*keys: str):
     values = []
 
     for key in keys:
@@ -656,7 +658,7 @@ async def create_game(thread: ThreadMatch | SearchResult = None, custom=False):
         return thread.id
 
 
-async def update_label(label: Label, *keys: list[str]):
+async def update_label(label: Label, *keys: str):
     values = []
 
     for key in keys:
@@ -714,7 +716,7 @@ async def create_label():
     return label
 
 
-async def update_tab(tab: Tab, *keys: list[str]):
+async def update_tab(tab: Tab, *keys: str):
     values = []
 
     for key in keys:

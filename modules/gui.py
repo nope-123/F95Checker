@@ -5352,9 +5352,31 @@ class MainGUI():
                         MsgBox.warn,
                         buttons
                     )
+                if imgui.button("GitHub session", width=-offset):
+                    def clear_callback():
+                        globals.settings.github_token = ""
+                        async_thread.run(db.update_settings("github_token"))
+                    buttons = {
+                        f"{icons.check} Yes": clear_callback,
+                        f"{icons.cancel} No": None
+                    }
+                    utils.push_popup(
+                        msgbox.msgbox, "Clear GitHub session",
+                        "Are you sure you want to clear your GitHub session?\n"
+                        "You will need to sign in to GitHub again to download new beta versions.",
+                        MsgBox.warn,
+                        buttons
+                    )
                 imgui.tree_pop()
             imgui.end_group()
             imgui.spacing()
+
+            draw_settings_label(
+                "F95Checker Beta:",
+                "Whether F95Checker will update to beta versions instead of stable ones."
+            )
+            if draw_settings_checkbox("app_beta_updates"):
+                globals.last_update_check = 0.0
 
             draw_settings_label(
                 "Ask exe on add:",

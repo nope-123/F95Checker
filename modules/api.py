@@ -128,6 +128,12 @@ api_fast_check_max_ids = 10
 
 app_update_endpoint = "https://api.github.com/repos/nope-123/F95Checker/releases/latest"
 upstream_compare_endpoint = "https://api.github.com/repos/nope-123/F95Checker/compare/main...WillyJL:main"
+app_update_beta_runs = "https://api.github.com/repos/nope-123/F95Checker/actions/workflows/build.yml/runs?status=success&per_page=1"
+app_update_beta_artifacts = "https://api.github.com/repos/nope-123/F95Checker/actions/runs/{run_id}/artifacts"
+app_update_beta_download = "https://github.com/nope-123/F95Checker/suites/{check_suite_id}/artifacts/{artifact_id}"
+app_update_beta_changelog = "https://raw.githubusercontent.com/nope-123/F95Checker/{head_sha}/CHANGELOG.md"
+github_login_page = "https://github.com/login"
+
 
 insecure_ssl_allowed_hosts = (
     f95_attachments_host_ninja,  # Invalid SSL cert but still works and is ran by F95zone
@@ -1179,6 +1185,37 @@ async def check_upstream():
     )
 
 
+async def github_login():
+    try:
+        ret = False
+        with await webview.start(
+            "cookies", github_login_page,
+            title="F95Checker: Login to GitHub",
+            size=(500, 720),
+            use_f95_cookies=False,
+            pipe=True,
+        ) as pipe:
+            while True:
+                (key, value) = await pipe.get_async()
+                if key == "user_session":
+                    globals.settings.github_token = value
+                    ret = True
+                    break
+        await asyncio.shield(db.update_settings("github_token"))
+        return ret
+    except Exception:
+        raise msgbox.Exc(
+            "Login window failure",
+            "Something went wrong with the login window subprocess:\n"
+            f"{error.text()}\n"
+            "\n"
+            "The console output contain more information.\n"
+            "Please submit a bug report on F95zone or GitHub including this file.",
+            MsgBox.error,
+            more=error.traceback()
+        )
+
+
 async def check_updates():
     with contextlib.suppress(Exception):
         await check_upstream()  # Never let this get in the way of the actual update check
@@ -1188,47 +1225,75 @@ async def check_updates():
         return  # Running from git repo, skip update
     res = None
     try:
-        res = await fetch("GET", app_update_endpoint, headers={"Accept": "application/vnd.github+json"})
-        res = json.loads(res)
-        globals.last_update_check = time.time()
-        if "tag_name" not in res:
-            utils.push_popup(
-                msgbox.msgbox, "Update check error",
-                "Failed to fetch latest F95Checker release information.\n"
-                "This might be a temporary issue.",
-                MsgBox.warn
-            )
-            return
-        if res["prerelease"]:
-            return  # Release is not ready yet
-        latest_name = res["tag_name"]
-        latest = latest_name.split(".")
-        current = globals.version.split(".")
-        if len(current) > len(latest):
-            latest += ["0" for _ in range(len(current) - len(latest))]
-        elif len(latest) > len(current):
-            current += ["0" for _ in range(len(latest) - len(current))]
-        update_available = not globals.release  # Allow updating from beta to full release
-        for cur, lat in zip(current, latest):
-            if cur == lat:
-                continue  # Ignore this field if same on both versions
-            update_available = int(lat) > int(cur)
-            break  # If field is bigger then its an update
         asset_url = None
         asset_name = None
         asset_size = None
-        asset_type = globals.os.name.lower() if globals.frozen else "source"
+        asset_type = "f95checker-" + (globals.os.name.lower() if globals.frozen else "source")
         if globals.frozen and globals.os is Os.MacOS:
             asset_type += "-arm64" if platform.machine().lower() == "arm64" else "-x64"
-        for asset in res["assets"]:
-            if asset_type in asset["name"].lower():
-                asset_url = asset["browser_download_url"]
-                asset_name = asset["name"]
-                asset_size = asset["size"]
-                break
-        changelog = res["body"].strip("\n")
-        if (match := "## 🚀 Changelog") in changelog:
-            changelog = changelog[changelog.find(match) + len(match):].strip()
+        asset_artifact = None
+
+        if globals.settings.app_beta_updates:
+            asset_type += "-artifact"
+            res = await fetch("GET", app_update_beta_runs, headers={"Accept": "application/vnd.github+json"})
+            res = json.loads(res)
+            globals.last_update_check = time.time()
+            run = res["workflow_runs"][0]
+            latest_name = f"{run['run_number']}"
+            update_available = run["run_number"] > globals.build_number
+            if not update_available:
+                return
+            res = await fetch("GET", app_update_beta_artifacts.format(run_id=run["id"]), headers={"Accept": "application/vnd.github+json"})
+            res = json.loads(res)
+            for artifact in res["artifacts"]:
+                if artifact["name"].lower().startswith(asset_type):
+                    asset_url = app_update_beta_download.format(check_suite_id=run["check_suite_id"], artifact_id=artifact["id"])
+                    asset_name = artifact["name"] + ".zip"
+                    asset_size = artifact["size_in_bytes"]
+                    break
+            asset_artifact = True
+            res = await fetch("GET", app_update_beta_changelog.format(head_sha=run["head_sha"]))
+            changelog = res.decode()
+        else:
+            res = await fetch("GET", app_update_endpoint, headers={"Accept": "application/vnd.github+json"})
+            res = json.loads(res)
+            globals.last_update_check = time.time()
+            if "tag_name" not in res:
+                utils.push_popup(
+                    msgbox.msgbox, "Update check error",
+                    "Failed to fetch latest F95Checker release information.\n"
+                    "This might be a temporary issue.",
+                    MsgBox.warn
+                )
+                return
+            if res["prerelease"]:
+                return  # Release is not ready yet
+            latest_name = res["tag_name"]
+            latest = latest_name.split(".")
+            current = globals.version.split(".")
+            if len(current) > len(latest):
+                latest += ["0" for _ in range(len(current) - len(latest))]
+            elif len(latest) > len(current):
+                current += ["0" for _ in range(len(latest) - len(current))]
+            update_available = not globals.release  # Allow updating from beta to full release
+            for cur, lat in zip(current, latest):
+                if cur == lat:
+                    continue  # Ignore this field if same on both versions
+                update_available = int(lat) > int(cur)
+                break  # If field is bigger then its an update
+            if not update_available:
+                return
+            for asset in res["assets"]:
+                if asset["name"].lower().startswith(asset_type):
+                    asset_url = asset["browser_download_url"]
+                    asset_name = asset["name"]
+                    asset_size = asset["size"]
+                    break
+            asset_artifact = False
+            changelog = res["body"].strip("\n")
+            if (match := "## 🚀 Changelog") in changelog:
+                changelog = changelog[changelog.find(match) + len(match):].strip()
+
         if not update_available or not asset_url or not asset_name or not asset_size:
             return
     except Exception as exc:
@@ -1244,6 +1309,7 @@ async def check_updates():
             MsgBox.error,
             more=f"Response body:\n{str(res)[:10000]}\n\n{error.traceback()}",
         )
+
     async def update_callback():
         progress = 0.0
         total = float(asset_size)
@@ -1279,18 +1345,47 @@ async def check_updates():
             closable=False,
             outside=False
         )
+
+        did_login = False
+        if asset_artifact and not globals.settings.github_token:
+            if not await github_login():
+                fmt = "Login canceled"
+                return
+            did_login = True
         asset_data = io.BytesIO()
-        async with request("GET", asset_url, timeout=3600, read=False) as (_, req):
-            async for chunk in req.content.iter_any():
-                if cancel:
-                    return
-                if chunk:
-                    progress += asset_data.write(chunk)
+        for _ in range(2):
+            req_opts = dict()
+            if asset_artifact:
+                req_opts["cookies"] = {
+                    "user_session": globals.settings.github_token,
+                }
+            async with request("GET", asset_url, timeout=3600, read=False, **req_opts) as (_, req):
+                if asset_artifact and req.status == 404:
+                    # Exit the async with block to close the connection, then do the login
+                    pass
                 else:
+                    async for chunk in req.content.iter_any():
+                        if cancel:
+                            return
+                        if chunk:
+                            progress += asset_data.write(chunk)
+                        else:
+                            break
                     break
+            if did_login:
+                fmt = "Login invalid"
+                return
+            else:
+                if not await github_login():
+                    fmt = "Login canceled"
+                    return
+                did_login = True
         progress = 0.0
         total = 1.0
         status = f"(2/3) Extracting {asset_name}..."
+        if asset_artifact:
+            with zipfile.ZipFile(asset_data) as z:
+                asset_data = io.BytesIO(z.read(asset_name.replace("-Artifact", "")))
         asset_path = pathlib.Path(tempfile.TemporaryDirectory(prefix=asset_name[:asset_name.rfind(".")] + "-").name)
         with zipfile.ZipFile(asset_data) as z:
             total = float(len(z.filelist))
@@ -1379,6 +1474,7 @@ try {{
             cwd=globals.self_path
         )
         globals.gui.close()
+
     def update_callback_wrapper():
         global updating
         updating = True
@@ -1387,6 +1483,7 @@ try {{
             updating = False
         task = async_thread.run(update_callback())
         task.add_done_callback(update_callback_done)
+
     buttons = {
         f"{icons.check} Yes": update_callback_wrapper,
         f"{icons.cancel} No": None
@@ -1401,7 +1498,7 @@ try {{
         path = globals.self_path
     utils.push_popup(
         msgbox.msgbox, "F95Checker update",
-        f"F95Checker has been updated to version {latest_name} (you are on {globals.version_name}).\n"
+        f"F95Checker has been updated to {'beta' if asset_artifact else 'version'} {latest_name} (you are on {globals.version_name}).\n"
         "UPDATING WILL DELETE EVERYTHING IN THIS FOLDER:\n"
         f"{path}\n"
         "Your user data (games, settings, login, ...) will not be affected.\n"

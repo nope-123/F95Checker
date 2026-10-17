@@ -5,7 +5,6 @@ import enum
 import functools
 import hashlib
 import json
-import os
 import pathlib
 import shutil
 import string
@@ -868,6 +867,7 @@ Type = IntEnumHack("Type", [
 
 @dataclasses.dataclass(slots=True)
 class Settings:
+    app_beta_updates            : bool
     background_on_close         : bool
     bg_notifs_interval          : int
     bg_refresh_interval         : int
@@ -897,6 +897,7 @@ class Settings:
     ext_icon_glow               : bool
     filter_all_tabs             : bool
     fit_images                  : bool
+    github_token                : str
     grid_columns                : int
     hidden_timeline_events      : list[TimelineEventType]
     hide_empty_tabs             : bool

@@ -28,6 +28,8 @@
     - select the folder as executable for each collection
     - clicking Play will open all files in your media player
   - Video and Pinup collections and such, default to seleting a folder when adding an executable
+- F95Checker Beta auto-update (by @WillyJL):
+  - Enable in Settings > Manage > F95Checker Beta
 - Show launch state on the play button (#288 by @cicklolwut)
 - Locally tracked playtime duration (#290 by @cicklolwut)
 - Label reordering (#291 by @px-pole & WillyJL)
