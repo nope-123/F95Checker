@@ -287,13 +287,13 @@ class WebTab:
     def load(self, url: str):
         self.view.setUrl(QtCore.QUrl(url))
 
-    def inject(self, suffix: str = ""):
+    def inject(self):
         # Only on f95zone: integrated.js decorates thread links and does nothing
         # anywhere else, but it declares its helpers with a top-level `var`, which
         # throws on a hardened page like mega.nz that makes its global object
         # non-extensible -- and that page then shows the error to the user
         if self.window.extension and "f95zone.to" in self.view.url().host():
-            self.page.runJavaScript(self.window.extension + suffix)
+            self.page.runJavaScript(self.window.extension)
 
     def add_game(self, url: str):
         # Injected on demand rather than relying on inject(): the page you are on can
@@ -305,18 +305,18 @@ class WebTab:
         self.loading = True
         self.window.sync_controls()
         self.window.set_progress(self, 1)
-        self.inject()
 
     def load_progress(self, value: int):
         self.window.sync_controls()
         self.window.set_progress(self, max(1, value))
-        self.inject()
 
     def load_finished(self, ok: bool = False):
         self.loading = False
         self.window.sync_controls()
         self.window.set_progress(self, 0)
-        self.inject("\nupdateIcons();")
+        # Once, when loaded: injecting mid-load breaks Cloudflare's challenge page,
+        # and integrated.js calls updateIcons() itself unless it is on that page
+        self.inject()
         if self.find_open and self.find_query:
             # Highlights die with the old document, so a tab with the bar open searches
             # the page that replaced it. Background tabs too -- set_status keeps a tab

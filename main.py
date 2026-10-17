@@ -19,15 +19,17 @@ def main():
         except Exception:
             pass
 
-    from external import async_thread, sync_thread
+    from external import async_thread
     async_thread.setup()
-    sync_thread.setup()
 
     from modules import api, db
     with db.setup(), api.setup():
 
         from modules import blocklist
         async_thread.run(blocklist.ensure_blocklist())
+
+        from external import sync_thread
+        sync_thread.setup(max(globals.settings.image_io_threads, globals.settings.image_decode_threads))
 
         from external import imagehelper
         imagehelper.setup()

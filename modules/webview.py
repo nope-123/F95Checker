@@ -14,6 +14,8 @@ from modules.webview_window import (
     watch_stdin,
 )
 
+user_agent: str = None
+
 # Qt WebEngine doesn't like running alongside other OpenGL
 # applications so we need to run a dedicated multiprocess
 
@@ -236,3 +238,14 @@ def xpath_redirect(url: str, xpath_expression: str = None, **kwargs):
         f"document.evaluate({xpath_expression!r}, document, null,"
         f" XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem({index})?.click();"
     ), **kwargs)
+
+
+def solve_captcha(url: str, title_search: str, **kwargs):
+    app = create(**kwargs | dict(buttons=False, extension=False, private=True, tabs=False))
+    def title_changed(title: str):
+        if title_search in title:
+            app.window.close()
+    app.window.webview.titleChanged.connect(title_changed)
+    app.window.webview.setUrl(QtCore.QUrl(url))
+    show_front(app.window)
+    app.exec()

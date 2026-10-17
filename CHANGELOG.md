@@ -9,6 +9,16 @@
   - Use arrow keys to cycle this game's images
   - Can also press space to toggle the viewer instead of clicking with mouse
   - Scroll to zoom then move mouse to pan
+- Parallelized image I/O and decoding (by @WillyJL):
+  - Multiple threads can now be allocated for image loading
+  - Customizable parameters In Settings > Images for how many threads to use for I/O, decoding and limit to concurrent GIF decoding
+  - Means that next images in queue can start being fetched from disk while previous images are still decoding, and multiple of these can happen at once
+  - Source images (with Tex compress option disabled) can now load much faster, like they should have to begin with
+  - Compressed images (with Tex compress option enabled) can now load even faster, making loading truly unnoticeable, though the tradeoff might not be worth to most users
+  - Due to this, Settings > Images > Unload off-screen is now on by default, and existing users who have it off should consider enabling it to save RAM and VRAM
+  - The default (4 I/O threads, 3 Decode threads, 2 Decode GIFs) should be fine for most users, but tweaking for your hardware can help (if you go all out you might get stutters)
+  - If you want the previous behavior (one image at a time) set all 3 parameters (I/O threads, Decode threads and Decode GIFs) to 1
+  - Note that changing these parameters requires restarting the app
 - Exe launch wrappers (#289 by @cicklolwut & @WillyJL):
   - Allows setting custom arguments and wrapper commands for launching
   - Support for Wine/Proton on Linux/macOS
@@ -17,6 +27,7 @@
     - specify all Video/GIF collections to be opened with a custom command for your media player
     - select the folder as executable for each collection
     - clicking Play will open all files in your media player
+  - Video and Pinup collections and such, default to seleting a folder when adding an executable
 - Show launch state on the play button (#288 by @cicklolwut)
 - Locally tracked playtime duration (#290 by @cicklolwut)
 - Label reordering (#291 by @px-pole & WillyJL)
@@ -58,6 +69,11 @@
 - Fix RPDL token expiry detection (by @WillyJL)
 - Add link to RPDL browser register page due to captcha/verification seemingly being required now (by @WillyJL)
 - Fix scrollbar not being clickable in multiline text fields (by @WillyJL)
+- Cache API errors and missing thread errors are now bunched together at end of refresh and are non-fatal (by @WillyJL)
+  - Refresh can complete even if some games have cache API errors
+  - Last available cached data is used in those cases
+  - The errors are bunched into a single warning popup at end of refresh, summarizing what games had what API errors and explaining that their data might be slightly out of date
+  - Missing threads are bunched into their own popup, and you can decide what to do to all of them at once (the usual remove, archive or convert to custom)
 
 ### Removed:
 - Collection and SiteRip thread types are gone, these are now detected as the appropriate animation/comic/game type
