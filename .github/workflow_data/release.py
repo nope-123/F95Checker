@@ -26,7 +26,10 @@ if __name__ == "__main__":
                         upstream += f"\n{heading}\n"
                         heading = None
                     upstream += f"{line}\n"
-        if upstream:
+        # Unless the fork changelog has its own section: that one was written by hand at the
+        # bump, folding these in with what upstream never wrote down and dropping anything an
+        # earlier release already announced, so appending these too would only repeat them
+        if upstream and "## ⬆️ From upstream" not in changelog:
             changelog += "\n## ⬆️ From upstream\n" + upstream.lstrip("\n")
     with open(os.environ["GITHUB_EVENT_PATH"]) as f:
         event = json.load(f)
