@@ -273,6 +273,7 @@ def solve_captcha(url: str, title_search: str, **kwargs):
 
 
 def user_agent(**kwargs):
-    app = create(**kwargs)
-    app.pipe.put(app.window.webview.profile.httpUserAgent())
+    app = create(**kwargs | dict(tabs=False))
+    # The profile is the window's here, not a tab's
+    app.pipe.put(app.window.profile.httpUserAgent())
     app.exit(0)
