@@ -206,6 +206,7 @@ def cookies(url: str, title_search: str | None = None, *, cookies: dict[str, str
     if title_search:
         def title_changed(title: str):
             if title_search in title:
+                app.pipe.put("success")
                 app.window.close()
         app.window.webview.titleChanged.connect(title_changed)
     app.window.webview.setUrl(url)

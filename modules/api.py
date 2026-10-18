@@ -320,6 +320,56 @@ async def request(method: str, url: str, read=True, cookies: dict = True, **kwar
                 if _can_ratelimit() and any(msg in res for msg in f95_ratelimit_forum_errors):
                     await _do_ratelimit()
                     continue
+                if is_forum_request and any(msg in res for msg in f95_cloudflare_captcha_messages) and not globals.gui.hidden:
+                    captcha_sem = asyncio.Semaphore(0)
+                    captcha_accepted = False
+                    captcha_solved = False
+                    captcha_task = None
+                    async def _captcha_cancel():
+                        captcha_sem.release()
+                    async def _captcha_solve():
+                        nonlocal captcha_accepted, captcha_solved, captcha_task
+                        captcha_accepted = True
+                        captcha_sem.release()
+                        try:
+                            captcha_task = asyncio.create_task(cloudflare_captcha())
+                            captcha_solved = await captcha_task
+                        except asyncio.CancelledError:
+                            pass
+                        finally:
+                            captcha_sem.release()
+                    captcha_popup = utils.push_popup(
+                        msgbox.msgbox, "Cloudflare captcha",
+                        "F95Checker hit a Cloudflare captcha while connecting to F95zone.\n"
+                        "\n"
+                        "Click below to solve it in the integrated browser.\n"
+                        "(This prompt will expire after 2 minutes)",
+                        MsgBox.warn,
+                        buttons={
+                            f"{icons.cancel} Cancel": lambda: async_thread.run(_captcha_cancel()),
+                            f"{icons.account_check_outline} Solve captcha": lambda: async_thread.run(_captcha_solve()),
+                        }
+                    )
+                    if captcha_popup:
+                        # Wait for user to respond to the popup
+                        try:
+                            async with asyncio.timeout(120):
+                                await captcha_sem.acquire()
+                        except TimeoutError:
+                            captcha_popup.open = False
+                        if captcha_accepted:
+                            # Wait for captcha to be solved
+                            try:
+                                async with asyncio.timeout(120):
+                                    await captcha_sem.acquire()
+                            except TimeoutError:
+                                captcha_task.cancel()
+                            if captcha_solved:
+                                # req_opts reference still points to globals.cookies, which is updated directly,
+                                # no need to update cookies here manually after captcha is solved
+                                continue
+                    # If captcha popup couldn't be opened, or it timed out, or was declined, fallback to yielding the
+                    # response and let the caller fail silently in raise_f95zone_error()
                 yield res, req
             break
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
@@ -337,6 +387,7 @@ async def fetch(method: str, url: str, **kwargs):
 
 async def cloudflare_captcha():
     try:
+        ret = False
         new_cookies = globals.cookies.copy()
         with await webview.start(
             "cookies", f95_host, "F95zone",
@@ -345,9 +396,16 @@ async def cloudflare_captcha():
             pipe=True,
         ) as pipe:
             while True:
-                (key, value) = await pipe.get_async()
+                data = await pipe.get_async()
+                if data == "success":
+                    ret = True
+                    # Don't break here, webview closes automatically on success,
+                    # no need to forcefully close it, just wait
+                    continue
+                (key, value) = data
                 new_cookies[key] = value
         await asyncio.shield(db.update_cookies(new_cookies))
+        return ret
     except Exception:
         raise msgbox.Exc(
             "Captcha window failure",
@@ -375,7 +433,7 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
                 message = None
             if message:
                 raise msgbox.Exc(
-                    "Forum error",
+                    "F95zone forum error",
                     "The F95zone Forum returned a temporary error with the following message:\n"
                     f"{message}",
                     MsgBox.error
@@ -395,17 +453,16 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
                 MsgBox.warn
             )
         if any(msg in res for msg in f95_cloudflare_captcha_messages):
-            raise msgbox.Exc(
+            exc = msgbox.Exc(
                 "Cloudflare captcha",
                 "F95Checker hit a Cloudflare captcha while connecting to F95zone.\n"
                 "\n"
-                "Click below to solve it in the integrated browser, then retry manually.",
-                MsgBox.warn,
-                buttons={
-                    f"{icons.cancel} Cancel": None,
-                    f"{icons.account_check_outline} Solve captcha": lambda: async_thread.run(cloudflare_captcha()),
-                }
+                "Please try again.",
+                MsgBox.warn
             )
+            # User already got a popup in request() to solve the captcha directly, this is just to silently interrupt the caller
+            exc.popup.open = False
+            raise exc
         if any(msg in res for msg in f95_temp_error_messages) or not res:
             raise msgbox.Exc(
                 "Server downtime",
@@ -428,7 +485,7 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
             more = json.dumps(res, indent=4)
             if msg := res.get("msg"):
                 raise msgbox.Exc(
-                    "API error",
+                    "F95zone API error",
                     "The F95zone API returned an 'error' status with the following message:\n"
                     f"{msg}",
                     MsgBox.error,
@@ -445,14 +502,14 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
                         MsgBox.warn
                     )
                 raise msgbox.Exc(
-                    "API error",
+                    "F95zone API error",
                     "The F95zone API returned an 'error' status with the following messages:\n"
                     " - " + "\n - ".join(errors),
                     MsgBox.error,
                     more=more
                 )
             raise msgbox.Exc(
-                "API error",
+                "F95zone API error",
                 "The F95zone API returned an 'error' status.",
                 MsgBox.error,
                 more=more

@@ -793,7 +793,8 @@ async def update_cookies(new_cookies: dict[str, str]):
             (?, ?)
             ON CONFLICT DO NOTHING
         """, (key, value))
-    globals.cookies = new_cookies
+    globals.cookies.clear()
+    globals.cookies.update(new_cookies)
 
 
 def legacy_json_to_dict(path: pathlib.Path):  # Pre v9.0

@@ -308,22 +308,28 @@ def popup(label: str, popup_content: typing.Callable, buttons: dict[str, typing.
 
 def push_popup(*args, bottom=False, **kwargs):
     popup = Popup(*args, **kwargs)
-    notify = False
+    notify_error = False
     if globals.gui:
-        if (globals.gui.hidden or not globals.gui.focused) and (len(args) > 3) and (args[0] is msgbox.msgbox) and (args[3] in (MsgBox.warn, MsgBox.error)):
-            # Ignore some temporary errors in background mode, taken from modules/api.py
-            if globals.gui.hidden and args[1] in (
-                "Rate limit",
-                "Server downtime",
-            ):
-                return
-            notify = True
+        if globals.gui.hidden or not globals.gui.focused:
+            is_msgbox = (len(args) > 3) and (args[0] is msgbox.msgbox)
+            if is_msgbox and (args[3] in (MsgBox.warn, MsgBox.error)):
+                # Ignore some temporary errors in background mode, taken from modules/api.py
+                if globals.gui.hidden and args[1] in (
+                    "Cloudflare captcha",
+                    "Server downtime",
+                    "F95zone forum error",
+                    "F95zone API error",
+                    "Rate limit",
+                    "Login expired",
+                ):
+                    return
+                notify_error = True
     if bottom:
         globals.popup_stack.insert(0, popup)
     else:
         globals.popup_stack.append(popup)
     globals.popup_stack_changed = True
-    if notify:
+    if notify_error:
         notification_proc.notify(
             title="Oops",
             msg="Something went wrong! Click to view the error.",
