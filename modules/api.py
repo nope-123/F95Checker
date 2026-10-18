@@ -335,6 +335,32 @@ async def fetch(method: str, url: str, **kwargs):
         return res
 
 
+async def cloudflare_captcha():
+    try:
+        new_cookies = globals.cookies.copy()
+        with await webview.start(
+            "cookies", f95_host, "F95zone",
+            title="F95Checker: Solve Cloudflare Captcha",
+            size=(500, 720),
+            pipe=True,
+        ) as pipe:
+            while True:
+                (key, value) = await pipe.get_async()
+                new_cookies[key] = value
+        await asyncio.shield(db.update_cookies(new_cookies))
+    except Exception:
+        raise msgbox.Exc(
+            "Captcha window failure",
+            "Something went wrong with the captcha window subprocess:\n"
+            f"{error.text()}\n"
+            "\n"
+            "The console output might contain more information.\n"
+            "Please submit a bug report on F95zone or GitHub including this file.",
+            MsgBox.error,
+            more=error.traceback()
+        )
+
+
 def raise_f95zone_error(res: bytes | dict, return_login=False):
     if isinstance(res, bytes):
         if b'<body data-template="error">' in res:
@@ -377,12 +403,7 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
                 MsgBox.warn,
                 buttons={
                     f"{icons.cancel} Cancel": None,
-                    f"{icons.account_check_outline} Solve captcha": lambda: async_thread.run(webview.start(
-                        "solve_captcha", f95_host, "F95zone",
-                        title="F95Checker: Solve Cloudflare Captcha",
-                        size=(500, 720),
-                        use_f95_cookies=False,
-                    )),
+                    f"{icons.account_check_outline} Solve captcha": lambda: async_thread.run(cloudflare_captcha()),
                 }
             )
         if any(msg in res for msg in f95_temp_error_messages) or not res:
@@ -484,7 +505,7 @@ async def login():
             "Something went wrong with the login window subprocess:\n"
             f"{error.text()}\n"
             "\n"
-            "The console output contain more information.\n"
+            "The console output might contain more information.\n"
             "Please submit a bug report on F95zone or GitHub including this file.",
             MsgBox.error,
             more=error.traceback()
@@ -1209,7 +1230,7 @@ async def github_login():
             "Something went wrong with the login window subprocess:\n"
             f"{error.text()}\n"
             "\n"
-            "The console output contain more information.\n"
+            "The console output might contain more information.\n"
             "Please submit a bug report on F95zone or GitHub including this file.",
             MsgBox.error,
             more=error.traceback()

@@ -191,14 +191,23 @@ def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, 
     app.exec()
 
 
-def cookies(url: str, **kwargs):
+def cookies(url: str, title_search: str | None = None, *, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):
     app = create(**kwargs | dict(buttons=False, extension=False, private=True, tabs=False))
     url = QtCore.QUrl(url)
+    if cookies and cookies_domain:
+        cookies_domain = QtCore.QUrl("https://" + cookies_domain)
+        for key, value in cookies.items():
+            app.window.webview.cookieStore.setCookie(QtNetwork.QNetworkCookie(QtCore.QByteArray(key.encode()), QtCore.QByteArray(value.encode())), cookies_domain)
     def on_cookie_add(cookie: QtNetwork.QNetworkCookie):
         name = cookie.name().data().decode('utf-8')
         value = cookie.value().data().decode('utf-8')
         app.pipe.put((name, value))
     app.window.webview.cookieStore.cookieAdded.connect(on_cookie_add)
+    if title_search:
+        def title_changed(title: str):
+            if title_search in title:
+                app.window.close()
+        app.window.webview.titleChanged.connect(title_changed)
     app.window.webview.setUrl(url)
     show_front(app.window)
     app.exec()
@@ -259,17 +268,6 @@ def xpath_redirect(url: str, xpath_expression: str = None, **kwargs):
         f"document.evaluate({xpath_expression!r}, document, null,"
         f" XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem({index})?.click();"
     ), **kwargs)
-
-
-def solve_captcha(url: str, title_search: str, **kwargs):
-    app = create(**kwargs | dict(buttons=False, extension=False, private=True, tabs=False))
-    def title_changed(title: str):
-        if title_search in title:
-            app.window.close()
-    app.window.webview.titleChanged.connect(title_changed)
-    app.window.webview.setUrl(QtCore.QUrl(url))
-    show_front(app.window)
-    app.exec()
 
 
 def user_agent(**kwargs):
