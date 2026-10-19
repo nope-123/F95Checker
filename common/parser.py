@@ -222,7 +222,7 @@ def thread(res: bytes) -> ParsedThread | ParserError:
         for elem in html.find(is_class("p-title-value")).children:
             if not is_class("labelLink")(elem) and not is_class("label-append")(elem):
                 name += elem.text
-        name = fixed_spaces(sanitize_whitespace(re.search(r"^\s*(.*?)(?:\s*\[.*?\]\s*)*$", name).group(1)))
+        name = fixed_spaces(sanitize_whitespace(re.search(r"^\s*(.*?)(?:\s*\[.*?\]\s*)*$", name, re.DOTALL).group(1)).replace("\n", " "))
 
         thread_version = get_game_attr("version", "mod version", "game version")
         if not thread_version:
@@ -405,8 +405,15 @@ def thread(res: bytes) -> ParsedThread | ParserError:
         else:
             image_url = "missing"
 
-        # FIXME: find preview images in thread
+        # Find all preview images in the starter post, prefer the full-size URL
         previews_urls = []
+        for img in post.find(is_class("bbWrapper")).find_all(is_class("js-lbImage")):
+            url = img.get("data-src") or ""
+            if not url.startswith("https://attachments.f95zone.to/"):
+                continue
+            # Skip duplicates
+            if url != image_url and url not in previews_urls:
+                previews_urls.append(url)
 
         downloads = get_game_downloads("downloads", "download")
 
