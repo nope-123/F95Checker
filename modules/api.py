@@ -461,7 +461,8 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
                 MsgBox.warn
             )
             # User already got a popup in request() to solve the captcha directly, this is just to silently interrupt the caller
-            exc.popup.open = False
+            if exc.popup:
+                exc.popup.open = False
             raise exc
         if any(msg in res for msg in f95_temp_error_messages) or not res:
             raise msgbox.Exc(
