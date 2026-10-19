@@ -114,7 +114,7 @@ async def thread(id: int) -> dict[str, str] | f95zone.IndexerError | None:
                     # Append screens from latest updates that are missing in the thread
                     for preview_url in update["screens"]:
                         preview_url = parser.attachment(preview_url)
-                        if preview_url not in ret.previews_urls:
+                        if preview_url != ret.image_url and preview_url not in ret.previews_urls:
                             ret.previews_urls.append(preview_url)
                     last_promoted = parser.datestamp(update["ts"])
                     if (

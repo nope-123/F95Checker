@@ -408,7 +408,7 @@ def thread(res: bytes) -> ParsedThread | ParserError:
         # Find all preview images in the starter post, prefer the full-size URL
         previews_urls = []
         for img in post.find(is_class("bbWrapper")).find_all(is_class("js-lbImage")):
-            url = img.get("data-src") or ""
+            url = img.get("href", "")
             if not url.startswith("https://attachments.f95zone.to/"):
                 continue
             # Skip duplicates
