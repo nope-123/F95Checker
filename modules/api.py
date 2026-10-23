@@ -182,6 +182,8 @@ def make_session():
         headers={
             "User-Agent": user_agent,
         },
+        # GitHub's Content-Security-Policy header outgrew aiohttp's 8190 byte default
+        max_field_size=65536,
     )
 
     if old_session:
