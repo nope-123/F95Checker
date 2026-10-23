@@ -73,9 +73,9 @@ f95_domains = (
 f95_host = "https://" + f95_domain
 f95_check_login_fast    = f95_host + "/sam/latest_alpha/"
 f95_login_page          = f95_host + "/login/"
-f95_notif_endpoint      = f95_host + "/conversations/popup?_xfResponseType=json"
+f95_notif_endpoint      = f95_host + "/direct-messages/popup?_xfResponseType=json"
 f95_alerts_page         = f95_host + "/account/alerts/"
-f95_inbox_page          = f95_host + "/conversations/"
+f95_inbox_page          = f95_host + "/direct-messages/"
 f95_threads_page        = f95_host + "/threads/"
 f95_bookmarks_page      = f95_host + "/account/bookmarks?difference=0&page={page}"
 f95_watched_page        = f95_host + "/watched/threads?unread=0&page={page}"
@@ -1183,7 +1183,7 @@ async def check_notifs(standalone=True, retry=False):
             if not await assert_login():
                 return
             return await check_notifs(retry=True)
-        alerts = int(res["visitor"]["alerts_unread"].replace(",", "").replace(".", ""))
+        alerts = int(res["visitor"]["alerts_unviewed"].replace(",", "").replace(".", ""))
         inbox  = int(res["visitor"]["conversations_unread"].replace(",", "").replace(".", ""))
     except Exception as exc:
         if isinstance(exc, msgbox.Exc) or not res:
@@ -1206,12 +1206,12 @@ async def check_notifs(standalone=True, retry=False):
     if alerts != 0 and inbox != 0:
         msg = (
             f"You have {alerts + inbox} unread notifications!\n"
-            f"({alerts} alert{'s' if alerts > 1 else ''} and {inbox} conversation{'s' if inbox > 1 else ''})"
+            f"({alerts} alert{'s' if alerts > 1 else ''} and {inbox} direct message{'s' if inbox > 1 else ''})"
         )
     elif alerts != 0 and inbox == 0:
         msg = f"You have {alerts} unread alert{'s' if alerts > 1 else ''}!"
     elif alerts == 0 and inbox != 0:
-        msg = f"You have {inbox} unread conversation{'s' if inbox > 1 else ''}!"
+        msg = f"You have {inbox} unread direct message{'s' if inbox > 1 else ''}!"
     else:
         return
     popup = None

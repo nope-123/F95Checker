@@ -1931,7 +1931,7 @@ class MainGUI():
             imgui.end_group()
             button_size = imgui.get_item_rect_size()
             if imgui.is_item_clicked():
-                callbacks.open_webpage(game.url + "/page-2/br-reviews")
+                callbacks.open_webpage(game.url + "/reviews/page-2")
             icon_coordinates.append((cur.x, cur.y, cur.x + button_size.x, cur.y + button_size.y))
             imgui.set_cursor_screen_pos(cur)
             imgui.invisible_button("", *button_size)
