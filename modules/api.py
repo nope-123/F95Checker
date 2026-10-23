@@ -1,6 +1,7 @@
 import asyncio
 import configparser
 import contextlib
+import functools
 import hashlib
 import http.cookies
 import io
@@ -81,10 +82,15 @@ f95_bookmarks_page      = f95_host + "/account/bookmarks?difference=0&page={page
 f95_watched_page        = f95_host + "/watched/threads?unread=0&page={page}"
 f95_latest_endpoint     = f95_host + "/sam/latest_alpha/latest_data.php?cmd={cmd}&cat={cat}&page={page}&{search}={query}&sort={sort}&rows={rows}&_={ts}"
 f95_ddl_endpoint        = f95_host + "/sam/dddl.php"
+f95_attachments_domains = (
+    f95_attachments_domain := f"attachments.{f95_domain}",
+    f95_attachments_domain_com := f"attachments.{f95_domain_com}",
+    f95_attachments_domain_ninja := f"attachments.{f95_domain_ninja}",
+)
 f95_attachments_hosts = (
-    f"https://attachments.{f95_domain}/",
-    f"https://attachments.{f95_domain_com}/",
-    f95_attachments_host_ninja := f"https://attachments.{f95_domain_ninja}/",
+    f"https://{f95_attachments_domain}/",
+    f"https://{f95_attachments_domain_com}/",
+    f95_attachments_host_ninja := f"https://{f95_attachments_domain_ninja}/",
 )
 f95_not_forum_url_prefixes = (
     f95_host + "/sam/",
@@ -160,7 +166,9 @@ def make_session():
 
     # Setup new HTTP session and proxy
     if globals.settings.proxy_type is ProxyType.Disabled:
-        connector = None
+        connector = aiohttp.TCPConnector(
+            loop=async_thread.loop,
+        )
     else:
         proxy_type = python_socks.ProxyType.HTTP
         match globals.settings.proxy_type:
@@ -175,6 +183,19 @@ def make_session():
             password=globals.settings.proxy_password,
             loop=async_thread.loop,
         )
+
+    # Temporarily ignore the single attachments host with signed URLs enabled
+    async def resolve(self: aiohttp.DefaultResolver, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET):
+        hosts = await type(self).resolve(self, host, port, family)
+        if host in f95_attachments_domains:
+            for host_i in reversed(range(len(hosts))):
+                if hosts[host_i].get("host") in (
+                    "91.202.4.58",
+                ):
+                    del hosts[host_i]
+        return hosts
+    connector._resolver.resolve = functools.partial(resolve, connector._resolver)
+
     session = aiohttp.ClientSession(
         loop=async_thread.loop,
         connector=connector,
@@ -265,7 +286,9 @@ async def request(method: str, url: str, read=True, cookies: dict = True, **kwar
     headers = kwargs.pop("headers", None)
     if not headers:
         headers = {}
-    retries = globals.settings.max_retries + 1
+    attempts = kwargs.pop("attempts", None)
+    if not attempts:
+        attempts = globals.settings.max_retries + 1
     if cookies is True or cookies is None:
         cookies = globals.cookies
     elif cookies is False:
@@ -294,7 +317,8 @@ async def request(method: str, url: str, read=True, cookies: dict = True, **kwar
     )
     if url.startswith(insecure_ssl_allowed_hosts) or globals.settings.insecure_ssl:
         req_opts["ssl"] = False
-    while retries and ratelimit_retries:
+    req_opts |= kwargs
+    while attempts and ratelimit_retries:
         try:
             # Only ratelimit when connecting to F95zone
             if is_forum_request:
@@ -309,8 +333,7 @@ async def request(method: str, url: str, read=True, cookies: dict = True, **kwar
             async with maybe_ratelimit, session.request(
                 method,
                 url,
-                **req_opts,
-                **kwargs
+                **req_opts
             ) as req:
                 if _can_ratelimit() and req.status == 429:
                     await _do_ratelimit()
@@ -377,8 +400,8 @@ async def request(method: str, url: str, read=True, cookies: dict = True, **kwar
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             if globals.settings.ignore_semaphore_timeouts and isinstance(exc, OSError) and exc.errno == 121:
                 continue
-            retries -= 1
-            if not retries:
+            attempts -= 1
+            if not attempts:
                 raise
 
 
@@ -597,8 +620,18 @@ async def download_webpage(url: str):
 async def download_image(url: str):
     with images_counter:
         while True:
+            async def raise_for_status(res: aiohttp.ClientResponse):
+                # Ignore redirects, mostly to avoid strain on forum servers due to failed signed URL checks on attachments servers
+                if 300 <= res.status:
+                    raise aiohttp.ClientResponseError(
+                        res.request_info,
+                        res.history,
+                        status=res.status,
+                        message=res.reason,
+                        headers=res.headers,
+                    )
             try:
-                res = await fetch("GET", url, timeout=globals.settings.request_timeout * 4, raise_for_status=True)
+                res = await fetch("GET", url, timeout=globals.settings.request_timeout * 4, allow_redirects=False, raise_for_status=raise_for_status)
             except aiohttp.ClientResponseError as exc:
                 if exc.status < 400:
                     raise  # Not error status
