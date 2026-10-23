@@ -523,7 +523,7 @@ def raise_api_error(res: bytes | dict):
         if any(msg in res for msg in (
             b"<title>api.f95checker.dev | 502: Bad gateway</title>",
             b"<title>api.f95checker.dev | 521: Web server is down</title>",
-        )):
+        )) or not res:
             raise msgbox.Exc(
                 "Server downtime",
                 "The F95Checker Cache API is currently unreachable,\n"
