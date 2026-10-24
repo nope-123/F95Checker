@@ -64,6 +64,7 @@ zip_exclude_packages = [
     "bencode2",
     "desktop_notifier",
     "glfw",
+    "winrt",  # Reads _table.pywinrt beside each module, only shipped outside the zip
 ] + (["PyQt6"] if sys.platform.startswith("win") else [])
 optimize = 2
 silent_level = 0

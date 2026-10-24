@@ -5,8 +5,6 @@ glfw==2.10.2
 # Interface stuff
 imgui==2.0.0
 desktop-notifier==6.2.0
-# pywinrt 4 reads data files beside its modules, which fails from cx_Freeze's library.zip
-winrt-runtime==3.2.1 ; sys_platform == "win32"
 # https://github.com/WillyJL/F95Checker/pull/87
 PyQt6-WebEngine==6.7.0 ; sys_platform != "darwin"
 PyQt6==6.7.1 ; sys_platform != "darwin"
