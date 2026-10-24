@@ -250,10 +250,21 @@ Please note that this software is not ( yet ;) ) officially affiliated with the 
 
 Supporters:
 
-[FaceCrap](https://f95zone.to/members/2913051/) - [WhiteVanDaycare](https://f95zone.to/members/3509231/) - [ascsd](https://f95zone.to/members/3977760/) -
-[GioBol](https://f95zone.to/members/3716618/) - [Jarulf](https://f95zone.to/members/2709937/) - [salkrim](https://f95zone.to/members/3899517/) -
-[rozzic](https://f95zone.to/members/449099/) -[Belfaier](https://f95zone.to/members/7363156/) - [warez_gamez](https://f95zone.to/members/81517/) -
-[DeadMoan](https://f95zone.to/members/4392187/) - And 4 anons
+[FaceCrap](https://f95zone.to/members/2913051/) -
+[kitty_kt](https://f95zone.to/members/97672/) -
+[laseracid](https://f95zone.to/members/97860/) -
+[ascsd](https://f95zone.to/members/3977760/) -
+[GioBol](https://f95zone.to/members/3716618/) -
+[Turribel](https://f95zone.to/members/2114990/) -
+[leavy](https://f95zone.to/members/2642332/) -
+[WhiteVanDaycare](https://f95zone.to/members/3509231/) -
+[Jarulf](https://f95zone.to/members/2709937/) -
+[salkrim](https://f95zone.to/members/3899517/) -
+[rozzic](https://f95zone.to/members/449099/) -
+[Belfaier](https://f95zone.to/members/7363156/) -
+[warez_gamez](https://f95zone.to/members/81517/) -
+[DeadMoan](https://f95zone.to/members/4392187/) -
+And 4 anons
 
 Contributors:
 
@@ -261,19 +272,33 @@ Contributors:
 - [littleraisins](https://github.com/littleraisins): Fixes, features and misc ideas from the (defunct) 'X' fork
 - [FaceCrap](https://github.com/FaceCrap): Multiple small fixes, improvements and finetuning
 - [blackop](https://github.com/disaster2395): Proxy support, temporary ratelimit fix, linux login fix
+- [Crykon](https://github.com/Crykon): Preview images
 - [cicklolwut](https://github.com/cicklolwut): Security fixes, Linux wine/proton config, playtime stats
-- [Sam](https://f95zone.to/members/7899/): Support from F95zone side to make much this possible
-- [GR3ee3N](https://github.com/GR3ee3N): Optimized build workflows and other PRs
+- [Sam](https://f95zone.to/members/7899/): Support from F95zone side to make much of this possible
 - [batblue](https://f95zone.to/members/4143766/): macOS suppport and feedback guy
 - [unroot](https://f95zone.to/members/1585550/): Linux support and feedback guy
-- [ploper26](https://f95zone.to/members/1295524/): Suggested HEAD requests for refreshing
+- [ploper26](https://f95zone.to/members/1295524/): Suggested HEAD requests for refreshing (no longer used)
 - [ascsd](https://f95zone.to/members/3977760/): Helped with brainstorming on some issues and gave some tips
+- [GR3ee3N](https://github.com/GR3ee3N): Optimized build workflows and other PRs
+- See the full list [here](https://github.com/WillyJL/F95Checker/graphs/contributors?all=1)
 
 Community:
 
-[abada25](https://f95zone.to/members/1679118/) - [AtotehZ](https://f95zone.to/members/840616/) - [bitogno](https://f95zone.to/members/605466/) -
+[abada25](https://f95zone.to/members/1679118/) -
+[AtotehZ](https://f95zone.to/members/840616/) -
+[bitogno](https://f95zone.to/members/605466/) -
 [BrockLanders](https://f95zone.to/members/2707184/) -
 [d_pedestrian](https://f95zone.to/members/2616862/) -
-[Danv](https://f95zone.to/members/2758580/) - [DarK x Duke](https://f95zone.to/members/1852502/) - [Dukez](https://f95zone.to/members/3182770/) - [GrammerCop](https://f95zone.to/members/2114990/) - [harem.king](https://f95zone.to/members/6410446/) -
-[MillenniumEarl](https://f95zone.to/members/1470797/) - [simple_human](https://f95zone.to/members/1056502/) - [SmurfyBlue](https://f95zone.to/members/671/) - [WhiteVanDaycare](https://f95zone.to/members/3509231/) - [yohudood](https://f95zone.to/members/26049/) -
+[Danv](https://f95zone.to/members/2758580/) -
+[DarK x Duke](https://f95zone.to/members/1852502/) -
+[Dfour](https://f95zone.to/members/114089/) -
+[Dukez](https://f95zone.to/members/3182770/) -
+[Fauno36](https://f95zone.to/members/6131511/) -
+[harem.king](https://f95zone.to/members/6410446/) -
+[MillenniumEarl](https://f95zone.to/members/1470797/) -
+[simple_human](https://f95zone.to/members/1056502/) -
+[SirKat](https://f95zone.to/members/1876442/) -
+[SmurfyBlue](https://f95zone.to/members/671/) -
+[WhiteVanDaycare](https://f95zone.to/members/3509231/) -
+[yohudood](https://f95zone.to/members/26049/) -
 And others that I might be forgetting

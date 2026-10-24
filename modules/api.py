@@ -135,12 +135,12 @@ api_fast_check_url = api_host + "/fast?ids={ids}"
 api_full_check_url = api_host + "/full/{id}?ts={ts}"
 api_fast_check_max_ids = 10
 
-app_update_endpoint = "https://api.github.com/repos/nope-123/F95Checker/releases/latest"
+app_update_stable_latest = "https://api.github.com/repos/nope-123/F95Checker/releases/latest"
 upstream_compare_endpoint = "https://api.github.com/repos/nope-123/F95Checker/compare/main...WillyJL:main"
 app_update_beta_runs = "https://api.github.com/repos/nope-123/F95Checker/actions/workflows/build.yml/runs?status=success&per_page=1"
 app_update_beta_artifacts = "https://api.github.com/repos/nope-123/F95Checker/actions/runs/{run_id}/artifacts"
 app_update_beta_download = "https://github.com/nope-123/F95Checker/suites/{check_suite_id}/artifacts/{artifact_id}"
-app_update_beta_changelog = "https://raw.githubusercontent.com/nope-123/F95Checker/{head_sha}/CHANGELOG.md"
+app_update_beta_changelog = "https://raw.githubusercontent.com/nope-123/F95Checker/{head_sha}/CHANGELOG-fork.md"
 github_login_page = "https://github.com/login"
 
 
@@ -549,8 +549,7 @@ def raise_f95zone_error(res: bytes | dict, return_login=False):
 def raise_api_error(res: bytes | dict):
     if isinstance(res, bytes):
         if any(msg in res for msg in (
-            b"<title>api.f95checker.dev | 502: Bad gateway</title>",
-            b"<title>api.f95checker.dev | 521: Web server is down</title>",
+            b'<div id="cf-error-details" class="p-0">',
         )) or not res:
             raise msgbox.Exc(
                 "Server downtime",
@@ -996,7 +995,7 @@ async def fast_check(games: list[Game], full: bool, updates: dict[int, OldGame],
         async with fast_checks_sem:
             res = None
             try:
-                res = await fetch("GET", api_fast_check_url.format(ids=",".join(str(game.id) for game in games)), timeout=120, cookies=False)
+                res = await fetch("GET", api_fast_check_url.format(ids=",".join(str(game.id) for game in games)), timeout=600, cookies=False)
                 raise_api_error(res)
                 last_changes = json.loads(res)
                 raise_api_error(last_changes)
@@ -1397,9 +1396,9 @@ async def check_updates():
                     break
             asset_artifact = True
             res = await fetch("GET", app_update_beta_changelog.format(head_sha=run["head_sha"]))
-            changelog = res.decode()
+            changelog_full = f"## Beta {latest_name}\n\n{res.decode()}"  # Fork notes have no version titles
         else:
-            res = await fetch("GET", app_update_endpoint, headers={"Accept": "application/vnd.github+json"})
+            res = await fetch("GET", app_update_stable_latest, headers={"Accept": "application/vnd.github+json"})
             res = json.loads(res)
             globals.last_update_check = time.time()
             if "tag_name" not in res:
@@ -1434,12 +1433,24 @@ async def check_updates():
                     asset_size = asset["size"]
                     break
             asset_artifact = False
-            changelog = res["body"].strip("\n")
-            if (match := "## 🚀 Changelog") in changelog:
-                changelog = changelog[changelog.find(match) + len(match):].strip()
+            # The fork's notes are in the release body, its CHANGELOG.md is upstream's and has no fork versions
+            changelog_full = f"## {latest_name}\n\n" + res["body"].split("## 🚀 Changelog")[-1].strip()
 
         if not update_available or not asset_url or not asset_name or not asset_size:
             return
+
+        changelog = ""
+        for changes in ("\n" + changelog_full).split("\n## ")[1:]:  # Split by each version's title
+            version, changes = changes.split("\n", 1)  # Split into version name and its changelog
+            version = version.strip()
+            changes = changes.strip()
+            if globals.release and version == globals.version:
+                break
+            changelog += f"## {version}\n\n{changes}\n\n"
+            if not globals.release and version == globals.version:
+                break
+        changelog = changelog.strip() + "\n"
+
     except Exception as exc:
         if isinstance(exc, msgbox.Exc) or not res:
             raise exc

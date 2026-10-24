@@ -15,7 +15,7 @@ from common import (
     parser,
 )
 
-RATELIMIT = aiolimiter.AsyncLimiter(max_rate=1, time_period=0.5)
+RATELIMIT = aiolimiter.AsyncLimiter(max_rate=1, time_period=0.25)
 TIMEOUT = aiohttp.ClientTimeout(total=30, connect=30, sock_read=30, sock_connect=30)
 LOGIN_ERROR_MESSAGES = (
     b'<a href="/login/" data-xf-click="overlay">Log in or register now.</a>',

@@ -3158,9 +3158,13 @@ class MainGUI():
             imgui.text("Supporters:")
             for name in [
                 "FaceCrap",
-                "WhiteVanDaycare",
+                "kitty_kt",
+                "laseracid",
                 "ascsd",
                 "GioBol",
+                "Turribel",
+                "leavy",
+                "WhiteVanDaycare",
                 "Jarulf",
                 "salkrim",
                 "rozzic",
@@ -3185,19 +3189,23 @@ class MainGUI():
             imgui.bullet()
             imgui.text("blackop: Proxy support, temporary ratelimit fix, linux login fix")
             imgui.bullet()
+            imgui.text("Crykon: Preview images")
+            imgui.bullet()
             imgui.text("cicklolwut: Security fixes, Linux wine/proton config, playtime stats")
             imgui.bullet()
-            imgui.text("Sam: Support from F95zone side to make much this possible")
+            imgui.text("Sam: Support from F95zone side to make much of this possible")
             imgui.bullet()
-            imgui.text("GR3ee3N: Optimized build workflows and other PRs")
-            imgui.bullet()
-            imgui.text("batblue: MacOS suppport and feedback guy")
+            imgui.text("batblue: macOS suppport and feedback guy")
             imgui.bullet()
             imgui.text("unroot: Linux support and feedback guy")
             imgui.bullet()
-            imgui.text("ploper26: Suggested HEAD checks (no longer used)")
+            imgui.text("ploper26: Suggested HEAD requests for refreshing (no longer used)")
             imgui.bullet()
             imgui.text("ascsd: Helped with brainstorming on some issues and gave some tips")
+            imgui.bullet()
+            imgui.text("GR3ee3N: Optimized build workflows and other PRs")
+            imgui.bullet()
+            imgui.text("See the full list on GitHub")
             imgui.spacing()
             imgui.spacing()
             imgui.text("Community:")
@@ -3208,12 +3216,14 @@ class MainGUI():
                 "BrockLanders",
                 "d_pedestrian",
                 "Danv",
-                "DarK x Duke",
+                "DarK",
+                "Dfour",
                 "Dukez",
-                "GrammerCop",
+                "Fauno36",
                 "harem.king",
                 "MillenniumEarl",
                 "simple_human",
+                "SirKat",
                 "SmurfyBlue",
                 "WhiteVanDaycare",
                 "yohudood",

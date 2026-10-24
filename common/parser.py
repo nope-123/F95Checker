@@ -78,10 +78,12 @@ def datestamp(timestamp: int | float):
     return int(utc_date.timestamp())
 
 
-def attachment(preview: str):
-    if preview.startswith("https://preview."):
-        return "https://attachments." + preview.removeprefix("https://preview.")
-    return preview
+def attachment(url: str):
+    if url.startswith("https://preview.f95zone.to/"):
+        url =  "https://attachments.f95zone.to/" + url.removeprefix("https://preview.f95zone.to/")
+    if url.startswith("https://attachments.f95zone.to/") and "?h=" in url:
+        url = url.split("?h=")[0]
+    return url
 
 
 class ParserError(Exception):
@@ -399,7 +401,7 @@ def thread(res: bytes) -> ParsedThread | ParserError:
 
         elem = post.find(is_class("bbWrapper")).find(lambda elem: elem.name == "div" and "data-src" in elem.attrs)
         if elem:
-            image_url = elem.get("data-src")
+            image_url = attachment(elem.get("data-src"))
         else:
             image_url = "missing"
 
@@ -409,6 +411,7 @@ def thread(res: bytes) -> ParsedThread | ParserError:
             url = img.get("href", "")
             if not url.startswith("https://attachments.f95zone.to/"):
                 continue
+            url = attachment(url)
             # Skip duplicates
             if url != image_url and url not in previews_urls:
                 previews_urls.append(url)

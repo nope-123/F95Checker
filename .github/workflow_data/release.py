@@ -12,7 +12,8 @@ if __name__ == "__main__":
     git = lambda *args: subprocess.run(("git", *args), capture_output=True, text=True).stdout
     if previous := git("describe", "--tags", "--abbrev=0", "HEAD^").strip():
         diff = git("diff", f"{previous}..HEAD", "--", "CHANGELOG.md").splitlines()
-        added = {line[1:] for line in diff if line.startswith("+") and not line.startswith("+++")}
+        # Upstream titles each version since 11.2.1, which means nothing on a fork release
+        added = {line[1:] for line in diff if line.startswith("+") and not line.startswith(("+++", "+## "))}
         # Walk the file rather than the diff, so the entries keep upstream's own
         # Added/Updated/Fixed grouping and order, and a heading only shows if it has entries
         upstream = ""
