@@ -5236,10 +5236,10 @@ class MainGUI():
                         closable=True,
                         outside=False
                     )
-                if imgui.button("F95 bookmarks", width=-offset):
+                if imgui.button("F95zone watched", width=-offset):
+                    utils.start_refresh_task(api.import_f95_watched(), reset_bg_timers=False)
+                if imgui.button("F95zone bookmarks", width=-offset):
                     utils.start_refresh_task(api.import_f95_bookmarks(), reset_bg_timers=False)
-                if imgui.button("F95 watched threads", width=-offset):
-                    utils.start_refresh_task(api.import_f95_watched_threads(), reset_bg_timers=False)
                 if imgui.button("Browser bookmarks", width=-offset):
                     def callback(selected):
                         if selected:

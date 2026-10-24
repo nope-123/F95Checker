@@ -767,9 +767,13 @@ async def add_games(*threads: list[ThreadMatch | SearchResult], force_summary=Fa
     if not threads:
         return
     async def _add_games():
+        done = []
         dupes = []
         added = []
         for thread in threads:
+            if thread.id in done:
+                continue
+            done.append(thread.id)
             if thread.id in globals.games:
                 dupes.append(globals.games[thread.id].name)
                 continue

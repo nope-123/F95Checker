@@ -78,8 +78,11 @@ f95_notif_endpoint      = f95_host + "/direct-messages/popup?_xfResponseType=jso
 f95_alerts_page         = f95_host + "/account/alerts/"
 f95_inbox_page          = f95_host + "/direct-messages/"
 f95_threads_page        = f95_host + "/threads/"
-f95_bookmarks_page      = f95_host + "/account/bookmarks?difference=0&page={page}"
-f95_watched_page        = f95_host + "/watched/threads?unread=0&page={page}"
+f95_watched_new_page    = f95_host + "/watched/threads?tab=new&src=watched&hide_seen=0&page={page}"
+f95_watched_games_page  = f95_host + "/watched/threads?tab=games&unread=0&page={page}"
+f95_watched_other_page  = f95_host + "/watched/threads?tab=other&unread=0&page={page}"
+f95_bookmark_new_page   = f95_host + "/watched/threads?tab=new&src=bookmarked&hide_seen=0&page={page}"
+f95_bookmark_main_page = f95_host + "/watched/threads?tab=bookmarks&page={page}"
 f95_latest_endpoint     = f95_host + "/sam/latest_alpha/latest_data.php?cmd={cmd}&cat={cat}&page={page}&{search}={query}&sort={sort}&rows={rows}&_={ts}"
 f95_ddl_endpoint        = f95_host + "/sam/dddl.php"
 f95_attachments_domains = (
@@ -149,7 +152,7 @@ updating = False
 session: aiohttp.ClientSession = None
 ssl_context: ssl.SSLContext = None
 temp_prefix = "F95Checker-Temp-"
-f95_ratelimit_forum = aiolimiter.AsyncLimiter(max_rate=1, time_period=2)
+f95_ratelimit_forum = aiolimiter.AsyncLimiter(max_rate=1, time_period=1)
 f95_ratelimit_attachments = aiolimiter.AsyncLimiter(max_rate=2, time_period=1)
 f95_ratelimit_sleeping = CounterContext()
 fast_checks_sem: asyncio.Semaphore = None
@@ -883,60 +886,87 @@ async def import_browser_bookmarks(file: str | pathlib.Path):
         )
 
 
+async def import_f95_watched():
+    globals.refresh_total = 1
+    if not await assert_login():
+        return
+    globals.refresh_progress = 1
+    threads = []
+    for f95_watched_page in (
+        f95_watched_new_page,
+        f95_watched_games_page,
+        f95_watched_other_page,
+    ):
+        page = 1
+        while True:
+            globals.refresh_total += 1
+            res = await fetch("GET", f95_watched_page.format(page=page))
+            raise_f95zone_error(res)
+            html = parser.html(res)
+            if f95_watched_page == f95_watched_new_page:
+                rows = html.find(parser.is_class("p-body-pageContent")).find_all(parser.is_class("f95wg-row"))
+                globals.refresh_progress += 1
+                if not rows:
+                    break
+                page += 1
+                for row in rows:
+                    threads += utils.extract_thread_matches(row.find(parser.is_class("f95wg-row-title")).find("a").get("href"))
+            else:
+                rows = html.find(parser.is_class("p-body-pageContent")).find(parser.is_class("structItemContainer"))
+                globals.refresh_progress += 1
+                if not rows:
+                    break
+                page += 1
+                for title in rows.find_all(parser.is_class("structItem-title")):
+                    threads += utils.extract_thread_matches(title.get("uix-href"))
+    if threads:
+        await callbacks.add_games(*threads, force_summary=True)
+    else:
+        utils.push_popup(
+            msgbox.msgbox, "No threads",
+            "Your F95zone watched list contains no valid threads to import!",
+            MsgBox.warn
+        )
+
+
 async def import_f95_bookmarks():
     globals.refresh_total = 1
     if not await assert_login():
         return
     globals.refresh_progress = 1
-    page = 0
     threads = []
-    while True:
-        globals.refresh_total += 1
-        res = await fetch("GET", f95_bookmarks_page.format(page=page))
-        raise_f95zone_error(res)
-        html = parser.html(res)
-        bookmarks = html.find(parser.is_class("p-body-pageContent")).find(parser.is_class("listPlain"))
-        globals.refresh_progress += 1
-        if not bookmarks:
-            break
-        page += 1
-        for title in bookmarks.find_all(parser.is_class("contentRow-title")):
-            threads += utils.extract_thread_matches(title.find("a").get("href"))
+    for f95_bookmark_page in (
+        f95_bookmark_new_page,
+        f95_bookmark_main_page,
+    ):
+        page = 1
+        while True:
+            globals.refresh_total += 1
+            res = await fetch("GET", f95_bookmark_page.format(page=page))
+            raise_f95zone_error(res)
+            html = parser.html(res)
+            if f95_bookmark_page == f95_bookmark_new_page:
+                rows = html.find(parser.is_class("p-body-pageContent")).find_all(parser.is_class("f95wg-row"))
+                globals.refresh_progress += 1
+                if not rows:
+                    break
+                page += 1
+                for row in rows:
+                    threads += utils.extract_thread_matches(row.find(parser.is_class("f95wg-row-title")).find("a").get("href"))
+            else:
+                rows = html.find(parser.is_class("p-body-pageContent")).find(parser.is_class("listPlain"))
+                globals.refresh_progress += 1
+                if not rows:
+                    break
+                page += 1
+                for title in rows.find_all(parser.is_class("contentRow-title")):
+                    threads += utils.extract_thread_matches(title.find("a").get("href"))
     if threads:
         await callbacks.add_games(*threads, force_summary=True)
     else:
         utils.push_popup(
             msgbox.msgbox, "No threads",
-            "Your F95zone bookmarks contain no valid threads to import!",
-            MsgBox.warn
-        )
-
-
-async def import_f95_watched_threads():
-    globals.refresh_total = 1
-    if not await assert_login():
-        return
-    globals.refresh_progress = 1
-    page = 1
-    threads = []
-    while True:
-        globals.refresh_total += 1
-        res = await fetch("GET", f95_watched_page.format(page=page))
-        raise_f95zone_error(res)
-        html = parser.html(res)
-        watched = html.find(parser.is_class("p-body-pageContent")).find(parser.is_class("structItemContainer"))
-        globals.refresh_progress += 1
-        if not watched:
-            break
-        page += 1
-        for title in watched.find_all(parser.is_class("structItem-title")):
-            threads += utils.extract_thread_matches(title.get("uix-data-href"))
-    if threads:
-        await callbacks.add_games(*threads, force_summary=True)
-    else:
-        utils.push_popup(
-            msgbox.msgbox, "No threads",
-            "Your F95zone watched threads contain no valid threads to import!",
+            "Your F95zone bookmark list contains no valid threads to import!",
             MsgBox.warn
         )
 
