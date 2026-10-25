@@ -1,5 +1,9 @@
 ## 11.2.2
 
+### Added:
+
+- Add arrows and a counter to image viewer (#327 by @zerebos)
+
 ### Fixed:
 - Slow responses from cache api are now handled gracefully (by @WillyJL)
 - Fix libraries not being bundled on Linux (by @WillyJL)
