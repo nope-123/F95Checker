@@ -51,7 +51,7 @@ An update checker and library tool for (NSFW) games on the [F95zone](https://f95
 
 Built with Python 3.11/3.12 for Windows, Linux and macOS (x64 and arm64).
 
-Binaries are available for all 3 platforms, requiring no setup at all. If instead you want to run from source note that Python 3.11+ is required and you'll need to
+Binaries are available for all 3 platforms, requiring no setup at all. If instead you want to run from source note that Python 3.11/3.12 is required and you'll need to
 install the requirements with pip.
 
 ## Installation:
@@ -118,7 +118,7 @@ Please note that this extension is solely to aid the usage of the desktop tool, 
   - Using the browser extension (more info above)
   - Using the `Manage > Import` section in the settings sidebar:
     - Thread links to paste multiple links at once
-    - F95zone bookmarks and watched threads to add the pages you saved on your F95zone account
+    - F95zone watched and bookmarks to add the pages you saved on your F95zone account
     - Browser bookmarks to import the bookmarks you saved in your browser
     - URL shortcut file for Windows web shortcut files
 
@@ -161,9 +161,9 @@ Please note that this extension is solely to aid the usage of the desktop tool, 
 - **How can I try new features early?**
 
   When I implement new features or work on fixing bugs I submit directly to the [main branch on GitHub](https://github.com/WillyJL/F95Checker), so running directly from
-  the source code there could prove unstable at times, and also requires a development environment with an updated Python install and all the requirements up to date. To
-  make testing new versions easier, I sometimes issue beta builds. This usually happens when I make some significant change, or an important bugfix, and want to have
-  some binaries that everyone can try easily and give me feedback.
+  the source code there could prove unstable at times, and also requires a development environment with the correct Python version installed and all the requirements up
+  to date. To make testing new versions easier, I sometimes issue beta builds. This usually happens when I make some significant change, or an important bugfix, and want
+  to have some binaries that everyone can try easily and give me feedback.
 
   **You can enable automatic beta updates in Settings > Manage > F95Checker Beta.**
 
@@ -177,7 +177,7 @@ Please note that this extension is solely to aid the usage of the desktop tool, 
 
 ## About the speed™:
 
-F95zone does not yet have a proper API serving the information needed by this tool, so the only way to gather them is by requesting the full game threads like a normal
+F95zone does have an API but it does not provide a few datapoints needed by this tool, so the only way to gather them is by requesting the full game threads like a normal
 browser would. However this is not practical because it consumes a lot of network and computing resources, takes way too long and puts unnecessary stress on the forum
 servers.
 
@@ -299,6 +299,5 @@ Community:
 [simple_human](https://f95zone.to/members/1056502/) -
 [SirKat](https://f95zone.to/members/1876442/) -
 [SmurfyBlue](https://f95zone.to/members/671/) -
-[WhiteVanDaycare](https://f95zone.to/members/3509231/) -
 [yohudood](https://f95zone.to/members/26049/) -
 And others that I might be forgetting

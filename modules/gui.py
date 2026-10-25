@@ -3225,7 +3225,6 @@ class MainGUI():
                 "simple_human",
                 "SirKat",
                 "SmurfyBlue",
-                "WhiteVanDaycare",
                 "yohudood",
                 "And others that I might be forgetting"
             ]:
