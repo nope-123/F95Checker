@@ -30,6 +30,7 @@ platform_packages = {
     "linux": ["dbus_fast"],
 }
 constants = []
+bin_path_includes = []
 bin_includes = []
 bin_excludes = []
 platform_libs = {
@@ -38,11 +39,6 @@ platform_libs = {
         "bz2",
         "crypto",
         "ffi",
-        "Qt6EglFSDeviceIntegration",
-        "Qt6EglFsKmsGbmSupport",
-        "Qt6EglFsKmsSupport",
-        "Qt6WebView",
-        "Qt6WebViewQuick",
         "sqlite3",
         "ssl",
         "xcb-cursor",
@@ -105,6 +101,8 @@ if sys.platform.startswith("win"):
 
 
 # Bundle system libraries
+if sys.platform.startswith("linux"):
+    bin_path_includes.append("/usr/lib/x86_64-linux-gnu")
 for platform, libs in platform_libs.items():
     if sys.platform.startswith(platform):
         for lib in libs:
@@ -180,7 +178,7 @@ cx_Freeze.setup(
             "excludes": excludes,
             "packages": packages,
             "constants": constants,
-            "bin_path_includes": ["/usr/lib/x86_64-linux-gnu"],
+            "bin_path_includes": bin_path_includes,
             "bin_includes": bin_includes,
             "bin_excludes": bin_excludes,
             "include_files": include_files,

@@ -2,6 +2,7 @@
 
 ### Fixed:
 - Slow responses from cache api are now handled gracefully (by @WillyJL)
+- Fix libraries not being bundled on Linux (by @WillyJL)
 
 ## 11.2.1
 

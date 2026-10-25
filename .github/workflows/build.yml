@@ -74,8 +74,6 @@ jobs:
         if: "runner.os == 'Linux'"
         run: |
           sudo apt install -y libxcb-cursor-dev
-          find /usr/lib -name 'libxcb-cursor.so*'
-          python -c 'import ctypes.util; print(ctypes.util.find_library("xcb-cursor"))'
 
       - name: "Build (Windows, Linux)"
         if: "runner.os != 'macOS'"
