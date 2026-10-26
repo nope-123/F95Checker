@@ -1,2 +1,0 @@
-### Fixed:
-- Download links work again after F95zone put every one behind a "Continue to …" page. Their links expire within hours and are signed for whichever account loaded the thread, so the links F95Checker had stored led to "This download link has expired". Clicking one now looks up your own fresh link in the thread and continues past that page by itself, and the integrated browser also skips the page when you click a download link while reading a thread. Going Back to the page leaves you on it
