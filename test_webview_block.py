@@ -159,6 +159,25 @@ def test_masked_f95zone_link_stays_in_the_tab():
         f"a masked link was moved out of the tab it was clicked in: {urls}"
 
 
+def test_f95zone_download_page_is_clicked_through():
+    """f95zone puts every download link behind a page of its own, whose Continue
+    button is the only way on to the host. Nobody opened it to read it, so the
+    browser presses Continue itself, in the tab and the unmask window alike."""
+    port = serve({
+        "/dl/1/": (200, {"Content-Type": "text/html"}, (
+            b"<html><body><button class='button js-f95dlContinue' onclick=\""
+            b"location.href='http://127.0.0.1:'+location.port+'/file'\">Continue</button>"
+            b"</body></html>")),
+        "/file": (200, {"Content-Type": "text/html"}, b"<html><body>the host</body></html>"),
+    })
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] += ' --host-resolver-rules="MAP f95zone.to 127.0.0.1"'
+    app, window = browser()
+    window.new_tab(f"http://f95zone.to:{port}/dl/1/")
+
+    urls = tabs_after(app, window, 6000)
+    assert urls == [f"http://127.0.0.1:{port}/file"], f"the download page was not clicked through: {urls}"
+
+
 def test_popup_ad_does_not_keep_its_tab():
     """An ad gated download host fires a popup on the same click that starts the
     download. One that hands over a file keeps its tab until the download handler
@@ -294,6 +313,7 @@ if __name__ == "__main__":
         "same": test_same_site_navigates_in_place,
         "redirect": test_redirect_cannot_take_the_tab,
         "masked": test_masked_f95zone_link_stays_in_the_tab,
+        "dl": test_f95zone_download_page_is_clicked_through,
         "popup": test_popup_ad_does_not_keep_its_tab,
         "confirm": test_same_site_popup_keeps_its_confirmation_page,
         "download": test_download_tab_closes_itself,

@@ -317,6 +317,15 @@ class WebTab:
         # Once, when loaded: injecting mid-load breaks Cloudflare's challenge page,
         # and integrated.js calls updateIcons() itself unless it is on that page
         self.inject()
+        # f95zone puts every download link behind a page with a Continue button. Its own
+        # script holds a click back until its check has run, so pressing it at once is
+        # safe. Not when you came Back to the page: that would only send you off again
+        url = self.view.url()
+        if ok and "f95zone.to" in url.host() and url.path().startswith("/dl/"):
+            self.page.runJavaScript(
+                "performance.getEntriesByType('navigation')[0]?.type != 'back_forward'"
+                " && document.querySelector('.js-f95dlContinue')?.click();"
+            )
         if self.find_open and self.find_query:
             # Highlights die with the old document, so a tab with the bar open searches
             # the page that replaced it. Background tabs too -- set_status keeps a tab

@@ -9,6 +9,7 @@ import itertools
 import pathlib
 import pickle
 import platform
+import re
 import sys
 import threading
 import time
@@ -2822,6 +2823,10 @@ class MainGUI():
                                     if not link:
                                         # Use thread url when link is missing
                                         link = game.url
+                                    elif link.startswith(f"{api.f95_host}/dl/") and (key := re.search(r"[?&]k=(\w+)", link)):
+                                        # Download page link, signed for whoever indexed the thread and dead within
+                                        # hours: find this account's own copy in the thread by its key instead
+                                        link = f"//a[contains(@href,'/dl/') and contains(@href,'k={key[1]}')]"
                                     if link.startswith("//"):
                                         # XPath expression
                                         if imgui.small_button(icons.link + mirror):
