@@ -1083,15 +1083,15 @@ async def full_check(game: Game, last_changed: int, updates: dict[int, OldGame],
                     thread["tags"][i] = Tag.unknown
             thread["tags"] = tuple(thread["tags"])
             thread["unknown_tags"] = json.loads(thread["unknown_tags"])
+            thread["previews_urls"] = json.loads(thread.get("previews_urls", "[]"))
             thread["downloads"] = json.loads(thread["downloads"])
             for _, links in thread["downloads"]:
                 for link_i, link_pair in enumerate(links):
                     links[link_i] = tuple(link_pair)
-            thread["previews_urls"] = json.loads(thread.get("previews_urls", "[]"))
             thread["downloads"] = tuple(thread["downloads"])
             thread["reviews_total"] = int(thread.get("reviews_total", "0"))
             thread["reviews"] = json.loads(thread.get("reviews", "[]"))
-            thread["reviews"] = [Review(**review) for review in thread["reviews"]]
+            thread["reviews"] = [Review(**{k: v for k, v in review.items() if k in Review.__dataclass_fields__}) for review in thread["reviews"]]
 
             old_name = game.name
             old_version = game.version

@@ -340,6 +340,8 @@ class MainGUI():
         self.game_hitbox_click = False
         self.hovered_game: Game = None
         self.dragging_previews = False
+        self.grabbing_previews_scrollbar = False
+        self.resizing_previews_height = False
         self.filters: list[Filter] = []
         self.poll_chars: list[int] = []
         self.refresh_ratio_smooth = 0.0
@@ -2395,7 +2397,14 @@ class MainGUI():
                 # the row in a child with an explicit horizontal bar.
                 # Without a child, ImGui clips same-line items at the
                 # popup boundary and the parent only scrolls vertically.
-                preview_height = self.scaled(200)
+                preview_height = self.scaled(globals.settings.previews_height)
+                if self.grabbing_previews_scrollbar:
+                    drag_delta = imgui.get_mouse_drag_delta()
+                    if self.resizing_previews_height or abs(drag_delta.y) > self.scaled(20.0):
+                        self.resizing_previews_height = True
+                        preview_height = min(max(self.scaled(20.0), preview_height + drag_delta.y), self.scaled(500.0))
+                    elif abs(drag_delta.x) > self.scaled(10.0):
+                        self.grabbing_previews_scrollbar = False
                 horizontal_flags = (
                     imgui.WINDOW_HORIZONTAL_SCROLLING_BAR |
                     imgui.WINDOW_ALWAYS_HORIZONTAL_SCROLLBAR |
@@ -2450,6 +2459,20 @@ class MainGUI():
                         self.dragging_previews = False
                     first = False
                 imgui.end_child()
+                mouse_pos = imgui.io.mouse_pos
+                item_rect_min = imgui.get_item_rect_min()
+                item_rect_max = imgui.get_item_rect_max()
+                if self.grabbing_previews_scrollbar or ((item_rect_min.x < mouse_pos.x and mouse_pos.x < item_rect_max.x) and
+                    (item_rect_max.y - imgui.style.scrollbar_size < mouse_pos.y and mouse_pos.y < item_rect_max.y)):
+                        if imgui.is_mouse_clicked():
+                            self.grabbing_previews_scrollbar = True
+                        if imgui.is_mouse_released():
+                            self.grabbing_previews_scrollbar = False
+                            if self.resizing_previews_height:
+                                drag_delta = imgui.get_mouse_drag_delta()
+                                globals.settings.previews_height = preview_height / globals.settings.interface_scaling
+                                async_thread.run(db.update_settings("previews_height"))
+                                self.resizing_previews_height = False
             imgui.push_text_wrap_pos()
 
             # Fullscreen image viewer
