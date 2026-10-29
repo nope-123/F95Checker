@@ -1539,26 +1539,42 @@ async def check_updates():
         total = 1.0
         status = f"(2/3) Extracting {asset_name}..."
         if asset_artifact:
-            with zipfile.ZipFile(asset_data) as z:
-                asset_data = io.BytesIO(z.read(asset_name.replace("-Artifact", "")))
+            with zipfile.ZipFile(asset_data) as arc:
+                asset_data = io.BytesIO(arc.read(asset_name.replace("-Artifact", "")))
         asset_path = pathlib.Path(tempfile.TemporaryDirectory(prefix=asset_name[:asset_name.rfind(".")] + "-").name)
-        with zipfile.ZipFile(asset_data) as z:
-            total = float(len(z.filelist))
-            for file in z.filelist:
+        with zipfile.ZipFile(asset_data) as arc:
+            arc._ignore_invalid_names = True  # Fix path and link traversal in arc.extract()
+            # Extract manually to create symlinks and apply permissions
+            path = asset_path
+            total = float(len(arc.filelist))
+            for file in arc.filelist:
                 if cancel:
                     shutil.rmtree(asset_path, ignore_errors=True)
                     return
                 mode = file.external_attr >> 16
                 if (mode & stat.S_IFLNK) == stat.S_IFLNK:
-                    extracted = asset_path / file.filename
-                    symlink = z.read(file).decode()
-                    os.symlink(symlink, extracted)
-                    if hasattr(os, "lchmod"):
-                        os.lchmod(extracted, mode)
+                    extracted = path / file.filename
+                    if path.resolve() not in extracted.resolve().parents:
+                        # Path traversal, ignore
+                        progress += 1
+                        continue
+                    symlink = arc.read(file).decode()
+                    if path.resolve() not in (extracted.resolve().parent / symlink).resolve().parents:
+                        # Link traversal, ignore
+                        progress += 1
+                        continue
+                    if extracted.exists():
+                        extracted.unlink()
+                    extracted.symlink_to(symlink)
+                    try:
+                        extracted.lchmod(mode)
+                    except NotImplementedError:
+                        pass
                 else:
-                    extracted = z.extract(file, asset_path)
-                    if mode != 0:
-                        os.chmod(extracted, mode)
+                    extracted = arc.extract(file, path)
+                    if extracted and mode != 0:
+                        extracted = pathlib.Path(extracted)
+                        extracted.chmod(mode)
                 progress += 1
         progress = 5.0
         total = 5.0

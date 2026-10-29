@@ -434,6 +434,21 @@ class MainGUI():
         glfw.set_drop_callback(self.window, self.drop_callback)
         glfw.swap_interval(globals.settings.vsync_ratio)
 
+        # Query supported Wayland protocls
+        self.wayland_protocols = {}
+        self.glfw_platform = glfw.get_platform()
+        if self.glfw_platform == glfw.PLATFORM_WAYLAND:
+            try:
+                import pywayland.client
+                def on_global(registry, name, interface, version):
+                    self.wayland_protocols[interface] = version
+                with pywayland.client.Display() as display:
+                    registry = display.get_registry()
+                    registry.dispatcher["global"] = on_global
+                    display.roundtrip()
+            except Exception as exc:
+                print(f"Failed enumerating Wayland protocols: {exc}")
+
         self.logo_texture = imagehelper.ImageHelper(globals.self_path / "resources/icons/logo.png")
         self.refresh_fonts()
         self.load_filters()
