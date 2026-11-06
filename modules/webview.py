@@ -187,6 +187,9 @@ def open(url: str, *, cookies: dict[str, str] = {}, cookies_domain: str = None, 
         show_front(app.window)
     app.window.url_received.connect(open_tab)
     watch_stdin(app.window)
+    # Here, not in show_front: later opens go through that too, and shouldn't
+    # re-maximize a window the user has since restored down
+    app.window.showMaximized()
     show_front(app.window)
     app.exec()
 

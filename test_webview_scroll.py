@@ -134,7 +134,8 @@ def test_a_restored_tab_keeps_its_place():
     app = QtWidgets.QApplication(sys.argv)
     QtCore.QStandardPaths.setTestModeEnabled(True)  # a non-private window opens a profile
     isolate_settings()
-    settings().setValue("session", json.dumps([f"http://127.0.0.1:{port}/thread#post-{TARGET}"]))
+    # Two, because a lone tab is left for Ctrl+Shift+T rather than reopened
+    settings().setValue("session", json.dumps([f"http://127.0.0.1:{port}/thread#post-{TARGET}"] * 2))
     window = BrowserWindow(
         buttons=True, tabs=True, private=False, icon=QtGui.QIcon(),
         background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
@@ -144,7 +145,7 @@ def test_a_restored_tab_keeps_its_place():
     window.resize(WIDTH, HEIGHT)
     window.restore_session()
     window.new_tab()
-    window.show()
+    window.showMaximized()
     app.processEvents()  # the restore waits for the window to be up
     restored = window.tab_list[0]
     QtCore.QTimer.singleShot(3000, lambda: window.tabs.setCurrentIndex(window.tab_list.index(restored)))

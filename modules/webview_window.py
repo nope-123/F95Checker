@@ -1042,7 +1042,12 @@ class BrowserWindow(QtWidgets.QWidget):
             # before open() shows the window, so there is no page on screen to lend these
             # its size yet, and a page laid out at 100x30 loses the post it was opened on
             urls = [QtCore.QUrl(url) for url in urls]
-            QtCore.QTimer.singleShot(0, lambda: self.open_dropped(urls, 0, background=True))
+            def restore():
+                # This timer beats the window system's queue, so a window shown maximized
+                # hasn't been told its real size yet, and that is the size these will copy
+                QtWidgets.QApplication.processEvents()
+                self.open_dropped(urls, 0, background=True)
+            QtCore.QTimer.singleShot(0, restore)
         else:
             self.closed.append((sys.maxsize, urls))  # after every tab, not at a position
 
