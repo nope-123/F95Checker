@@ -3633,7 +3633,8 @@ class MainGUI():
                 for tab in (None, *Tab.instances)
             }
             tab_games_ids = self.show_games_ids[self.current_tab]
-            if tab_games_ids != prev_tab_ids:
+            # Anchor only pure reorders (sorting, refresh), not games coming or going (search filter, add, remove)
+            if prev_tab_ids and tab_games_ids != prev_tab_ids and set(tab_games_ids) == set(prev_tab_ids):
                 self.reordered = True
             # Deselect things that arent't visible anymore
             for game in globals.games.values():
