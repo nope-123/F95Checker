@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import re
 import subprocess
 
 
@@ -33,6 +34,9 @@ if __name__ == "__main__":
         # earlier release already announced, so appending these too would only repeat them
         if upstream and "## ⬆️ From upstream" not in changelog:
             changelog += "\n## ⬆️ From upstream\n" + upstream.lstrip("\n")
+    # "(by @WillyJL)" in a release body pings the author on every fork release. \B keeps
+    # an email's @, which has a word character before it
+    changelog = re.sub(r"\B@(?=[\w-])", "", changelog)
     with open(os.environ["GITHUB_EVENT_PATH"]) as f:
         event = json.load(f)
     print(f"event = {json.dumps(event, indent=4)}")
