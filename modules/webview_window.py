@@ -709,6 +709,9 @@ class TabSidebar(QtWidgets.QWidget):
                     if item := self.list.itemAt(event.position().toPoint()):
                         self.window.close_tab(self.list.row(item))
                     return True
+            elif event.type() is Type.MouseButtonDblClick and not self.list.itemAt(event.position().toPoint()):
+                self.window.open_blank()  # the empty space below the rows, as on the top strip
+                return True
             elif event.type() is Type.Leave:
                 self.closer.hide()
             elif event.type() is Type.ContextMenu:
@@ -859,7 +862,7 @@ class BrowserWindow(QtWidgets.QWidget):
         if buttons and tabs:
             # Only with the chrome: the minimal windows have no tab bar to show
             for keys, handler in (
-                ("Ctrl+T", lambda: self.new_tab("about:blank")),
+                ("Ctrl+T", self.open_blank),
                 ("Ctrl+W", lambda: self.close_tab(self.tabs.currentIndex())),
                 ("Ctrl+Tab", self.next_tab),
                 ("Ctrl+Shift+,", self.toggle_vertical),  # Edge's
@@ -875,6 +878,7 @@ class BrowserWindow(QtWidgets.QWidget):
             # Not gated on tabs like the shortcuts above: those act on tabs, find acts
             # on a page. This keeps it out of the chrome-less login and cookie windows
             QtGui.QShortcut(QtGui.QKeySequence("Ctrl+F"), self).activated.connect(self.find.activate)
+            QtGui.QShortcut(QtGui.QKeySequence("F6"), self).activated.connect(self.focus_url)
             # The reload button's own action, so on a page still loading they stop it
             for keys in ("F5", "Ctrl+R"):
                 QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(lambda: self.current_tab.reload())
@@ -936,6 +940,17 @@ class BrowserWindow(QtWidgets.QWidget):
         self.sidebar.refresh()
         return tab
 
+    def open_blank(self):
+        """Ctrl+T, or a double click on the empty end of a tab strip: a tab that waits
+        in the address bar for you to type, as a browser's does"""
+        self.new_tab("about:blank")
+        self.focus_url()
+
+    def focus_url(self):
+        """F6. All of it selected, so typing replaces it"""
+        self.controls.buttons.url.setFocus()
+        self.controls.buttons.url.selectAll()
+
     def eventFilter(self, obj, event):
         # Only the tab widget and its own tab bar are filtered. A window resize reaches
         # the first, the tab bar coming or going moves the page area without resizing
@@ -950,6 +965,11 @@ class BrowserWindow(QtWidgets.QWidget):
                 if (index := obj.tabAt(event.position().toPoint())) >= 0:
                     self.close_tab(index)
                     return True
+        elif event.type() is QtCore.QEvent.Type.MouseButtonDblClick and obj is self.tabs.tabBar():
+            # The empty end of the strip, past the last tab
+            if obj.tabAt(event.position().toPoint()) < 0:
+                self.open_blank()
+                return True
         elif obj is self.tabs.tabBar() and event.type() in (
             QtCore.QEvent.Type.DragEnter, QtCore.QEvent.Type.DragMove, QtCore.QEvent.Type.Drop,
         ) and event.mimeData().hasUrls():
@@ -1111,7 +1131,8 @@ class BrowserWindow(QtWidgets.QWidget):
             self.setWindowTitle(title)
 
     def set_url_text(self, url: str):
-        self.controls.buttons.url.setText(url)
+        # A blank tab shows an empty bar to type into, not "about:blank" to delete first
+        self.controls.buttons.url.setText("" if url == "about:blank" else url)
         self.controls.buttons.url.setCursorPosition(0)
 
     def sync_controls(self):

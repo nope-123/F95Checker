@@ -94,10 +94,78 @@ def test_an_address_typed_without_a_scheme_loads():
     assert until(lambda: tab.view.url().path() == "/b"), f"typing it went to {tab.view.url().toString()!r}"
 
 
+def browser():
+    """Settings in a throwaway folder: these cases switch to vertical tabs. Waits until
+    the window is active, which show() is not yet, or nothing in it has focus to check"""
+    from webview_testkit import isolate_settings, until
+    app = QtWidgets.QApplication(sys.argv)
+    isolate_settings()
+    window = BrowserWindow(
+        buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
+        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
+        proxy_auth=None, title="test",
+    )
+    window.resize(900, 600)
+    window.show()
+    assert until(window.isActiveWindow), "the window never became active"
+    return app, window
+
+
+def shortcut(window, keys):
+    return {s.key().toString(): s for s in window.findChildren(QtGui.QShortcut)}[keys]
+
+
+def test_a_new_tab_waits_in_the_address_bar():
+    """Ctrl+T, or a double click on the empty end of either tab strip, opens a tab
+    with the address bar focused and empty, ready to type into"""
+    from PyQt6.QtTest import QTest
+    from webview_testkit import until
+    app, window = browser()
+    window.new_tab("about:blank#first")
+    bar = window.controls.buttons.url
+    left = QtCore.Qt.MouseButton.LeftButton
+    strip, rows = window.tabs.tabBar(), window.sidebar.list.viewport()
+
+    def side():
+        window.set_vertical(True)
+        until(lambda: rows.height() > 100)
+        QTest.mouseDClick(rows, left, pos=QtCore.QPoint(10, rows.height() - 5))
+
+    for way, open_it in (
+        ("Ctrl+T", lambda: shortcut(window, "Ctrl+T").activated.emit()),
+        ("the top strip", lambda: QTest.mouseDClick(strip, left, pos=QtCore.QPoint(strip.width() - 5, strip.height() // 2))),
+        ("the vertical list", side),
+    ):
+        count = len(window.tab_list)
+        window.current_tab.view.setFocus()
+        open_it()
+        assert len(window.tab_list) == count + 1, f"{way} opened {len(window.tab_list) - count} tabs"
+        tab = window.current_tab
+        assert tab is window.tab_list[-1], f"{way} did not switch to the new tab"
+        # Once about:blank has committed, which writes the bar again
+        until(lambda: tab.view.url().toString() == "about:blank")
+        assert bar.hasFocus(), f"{way} left the focus on {QtWidgets.QApplication.focusWidget()}"
+        assert bar.text() == "", f"{way} left {bar.text()!r} in the bar"
+
+
+def test_f6_focuses_the_address_bar():
+    """Selected as a whole, as in a browser, so typing replaces it"""
+    from webview_testkit import until
+    app, window = browser()
+    tab = window.new_tab("about:blank#page")
+    until(lambda: tab.view.url().toString() == "about:blank#page")
+    bar = window.controls.buttons.url
+    shortcut(window, "F6").activated.emit()
+    assert bar.hasFocus(), f"F6 left the focus on {QtWidgets.QApplication.focusWidget()}"
+    assert bar.selectedText() == "about:blank#page", f"F6 selected {bar.selectedText()!r}"
+
+
 if __name__ == "__main__":
     tests = {
         "backforward": test_the_back_and_forward_buttons_navigate,
         "typed": test_an_address_typed_without_a_scheme_loads,
+        "newtab": test_a_new_tab_waits_in_the_address_bar,
+        "f6": test_f6_focuses_the_address_bar,
     }
     # One QApplication per process, so each case runs as its own subprocess
     if len(sys.argv) > 1:
