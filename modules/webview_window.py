@@ -285,7 +285,9 @@ class WebTab:
         return self.window.current_tab is self
 
     def load(self, url: str):
-        self.view.setUrl(QtCore.QUrl(url))
+        # fromUserInput, not QUrl: a typed "google.com" has no scheme, and QUrl makes
+        # that a relative path WebEngine sends to about:blank. Full urls pass unchanged
+        self.view.setUrl(QtCore.QUrl.fromUserInput(url))
 
     def inject(self):
         # Only on f95zone: integrated.js decorates thread links and does nothing

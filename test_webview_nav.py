@@ -74,6 +74,36 @@ def test_the_back_and_forward_buttons_navigate():
     assert seen.get("forward") == "/b", f"forward left the tab on {seen.get('forward')}"
 
 
+def test_an_address_typed_without_a_scheme_loads():
+    """What you type is not a url yet: QUrl("google.com") is a relative path that
+    WebEngine turns into about:blank. The bar has to read it the way a browser does."""
+    from PyQt6.QtTest import QTest
+    from webview_testkit import until
+    port = serve()
+    app = QtWidgets.QApplication(sys.argv)
+    window = BrowserWindow(
+        buttons=True, tabs=True, private=True, icon=QtGui.QIcon(),
+        background_color=QtGui.QColor("#000000"), extension="", rpcproxy=None,
+        proxy_auth=None, title="test",
+    )
+    window.show()
+    tab = window.new_tab("about:blank")
+    bar = window.controls.buttons.url
+    bar.setText(f"127.0.0.1:{port}/b")
+    QTest.keyClick(bar, QtCore.Qt.Key.Key_Return)
+    assert until(lambda: tab.view.url().path() == "/b"), f"typing it went to {tab.view.url().toString()!r}"
+
+
 if __name__ == "__main__":
-    test_the_back_and_forward_buttons_navigate()
-    print("ok")
+    tests = {
+        "backforward": test_the_back_and_forward_buttons_navigate,
+        "typed": test_an_address_typed_without_a_scheme_loads,
+    }
+    # One QApplication per process, so each case runs as its own subprocess
+    if len(sys.argv) > 1:
+        tests[sys.argv[1]]()
+    else:
+        import subprocess
+        for case in tests:
+            subprocess.run([sys.executable, __file__, case], check=True)
+        print("ok")
