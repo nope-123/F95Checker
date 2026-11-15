@@ -130,6 +130,30 @@ def test_redirect_cannot_take_the_tab():
         f"a redirect took a tab off site: {urls}"
 
 
+def test_typed_address_keeps_its_redirects():
+    """The same 302 off site, but from an address you typed: google.pt hops to
+    google.com. The redirect is still your navigation, so it lands in the tab
+    instead of a probe tab that renders a page and closes itself."""
+    from PyQt6.QtTest import QTest
+    port = serve({
+        "/page": (200, {"Content-Type": "text/html"}, b"<html><body>the page you were reading</body></html>"),
+        "/go": (302, {"Location": "http://127.0.0.1:{port}/there"}, b""),
+        "/there": (200, {"Content-Type": "text/html"}, b"<html><body>where you asked to go</body></html>"),
+    })
+    app, window = browser()
+    window.show()
+    window.new_tab(f"http://localhost:{port}/page")
+    bar = window.controls.buttons.url
+
+    def type_it():
+        bar.setText(f"localhost:{port}/go")
+        QTest.keyClick(bar, QtCore.Qt.Key.Key_Return)
+    QtCore.QTimer.singleShot(2000, type_it)
+
+    urls = tabs_after(app, window, 6000)
+    assert urls == [f"http://127.0.0.1:{port}/there"], f"a typed address lost its redirect: {urls}"
+
+
 def test_masked_f95zone_link_stays_in_the_tab():
     """A masked f95zone link is a page you land on and click through to the host it
     stood for (see callbacks.redirect_masked_link, which resolves one by clicking
@@ -312,6 +336,7 @@ if __name__ == "__main__":
         "cross": test_cross_site_gets_a_background_tab,
         "same": test_same_site_navigates_in_place,
         "redirect": test_redirect_cannot_take_the_tab,
+        "typed": test_typed_address_keeps_its_redirects,
         "masked": test_masked_f95zone_link_stays_in_the_tab,
         "dl": test_f95zone_download_page_is_clicked_through,
         "popup": test_popup_ad_does_not_keep_its_tab,

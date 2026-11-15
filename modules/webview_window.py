@@ -121,6 +121,7 @@ class WebTab:
         self.window = window
         self.loading = False
         self.probe = False
+        self.started = None  # the navigation type a redirect chain began as
         self.opener = None
         # Find state lives on the tab: the window has one bar, and it mirrors
         # whichever tab is current
@@ -203,9 +204,17 @@ class WebTab:
         # login windows are one view watching for the very navigation this would move
         if not request.isMainFrame() or not self.window.tabs_enabled:
             return
+        # A redirect is judged as the navigation it continues: what you typed is yours
+        # all the way to where it lands (google.pt hops to google.com), while a click's
+        # redirects stay guarded hop by hop. Unknown start keeps it a plain redirect
+        kind = request.navigationType()
+        if kind is NavigationType.RedirectNavigation:
+            kind = self.started or kind
+        else:
+            self.started = kind
         # Typed stays exempt throughout: the address bar is the user's own instruction
         # and their way out, so it must never silently do nothing
-        if request.navigationType() is NavigationType.TypedNavigation:
+        if kind is NavigationType.TypedNavigation:
             return
         url = request.url()
         # The popup check and interceptRequest both miss the ad. An ad chain enters
@@ -243,7 +252,7 @@ class WebTab:
         # is showing is still the right question there, because a redirect has not
         # committed anything yet. Form posts, back/forward and reload stay exempt: those
         # are a login or your own history, not a page taking the tab
-        if request.navigationType() not in (
+        if kind not in (
             NavigationType.LinkClickedNavigation,
             NavigationType.RedirectNavigation,
             NavigationType.OtherNavigation,
