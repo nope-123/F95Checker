@@ -1091,7 +1091,10 @@ class BrowserWindow(QtWidgets.QWidget):
 
     def tab_title_changed(self, tab: WebTab, title: str):
         if tab in self.tab_list:
-            self.tabs.setTabText(self.tab_list.index(tab), title[:30])
+            index = self.tab_list.index(tab)
+            self.tabs.setTabText(index, title[:30])
+            # QTabBar never shows a tooltip on its own, not even for elided text
+            self.tabs.setTabToolTip(index, title)
         self.sidebar.refresh()
         if tab.is_current and not self.title_fixed:
             self.setWindowTitle(title)
