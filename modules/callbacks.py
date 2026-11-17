@@ -823,6 +823,8 @@ async def add_games(*threads: list[ThreadMatch | SearchResult], force_summary=Fa
                      (("Duplicates:\n - " + "\n - ".join(dupes)) if dupe_count > 0 else "")
             )
         globals.gui.recalculate_ids = True
+        if added:
+            globals.gui.scroll_to_top = True  # New games sort to the top
     count = len(threads)
     if globals.settings.select_executable_after_add and count > 1:
         buttons = {
