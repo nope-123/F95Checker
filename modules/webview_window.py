@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import pathlib
+import secrets
 import shlex
 import subprocess
 import sys
@@ -200,6 +201,26 @@ class WebTab:
         from PyQt6 import QtWebEngineCore
         from modules.blocklist import same_site
         NavigationType = QtWebEngineCore.QWebEngineNavigationRequest.NavigationType
+        url = request.url()
+        # A VIDEO_FALLBACK link: a video that cannot play here. A real browser can, so
+        # it goes to one, private, launched like the download manager: no shell, and the
+        # url an argument of its own. Before the frame check: it can be in an embed
+        if url.fragment() == VIDEO_TOKEN and url.scheme() in ("http", "https"):
+            request.reject()
+            link = url.url().removesuffix("#" + VIDEO_TOKEN)
+            if browser := self.window.video_browser:
+                try:
+                    subprocess.Popen(
+                        [*browser, link],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    return
+                except OSError:
+                    pass  # uninstalled since the checker found it
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(link))  # the system default, not private
+            return
         # Gated on tabs for the same reason new_window_requested is: the resolver and
         # login windows are one view watching for the very navigation this would move
         if not request.isMainFrame() or not self.window.tabs_enabled:
@@ -216,7 +237,6 @@ class WebTab:
         # and their way out, so it must never silently do nothing
         if kind is NavigationType.TypedNavigation:
             return
-        url = request.url()
         # The popup check and interceptRequest both miss the ad. An ad chain enters
         # through a domain no list knows and only lands on a listed host a redirect or
         # two later -- by which point it is a top level navigation, and interceptRequest
@@ -727,6 +747,26 @@ class TabSidebar(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
 
+# Qt's prebuilt WebEngine has no H.264 or AAC (patent licensing; no PyQt6 or PySide6
+# wheel up to Qt 6.12 has them either), so nearly every .mp4 is a player that never
+# plays. Any video that fails, on any site, becomes a link that navigation_requested
+# hands to a real browser. The link carries a token no page can guess, so a page
+# cannot launch that browser with links of its own
+VIDEO_TOKEN = secrets.token_hex(16)
+VIDEO_FALLBACK = """
+document.addEventListener('error', e => {
+    const video = e.target.closest?.('video'), src = e.target.src || '';
+    // A data: or blob: video exists only inside the page, so there is no file to hand
+    // a browser, and an earlier <source> failing only moves the player on to the next
+    if (!video || !src.startsWith('http') || e.target.matches('source:not(:last-of-type)')) return;
+    const a = document.createElement('a');
+    a.href = src.split('#')[0] + '#VIDEO_TOKEN';
+    a.textContent = "▶ Can't play this video here. Open it in your browser";
+    video.replaceWith(a);
+}, true);
+""".replace("VIDEO_TOKEN", VIDEO_TOKEN)
+
+
 class BrowserWindow(QtWidgets.QWidget):
     # Qt only recognizes signals declared as class attributes
     url_received = QtCore.pyqtSignal(str, dict)
@@ -756,6 +796,7 @@ class BrowserWindow(QtWidgets.QWidget):
         # exist up front: new_window_requested reads it on every popup, and an
         # AttributeError raised inside a Qt slot aborts the process and every open tab
         self.blocker = None
+        self.video_browser = None  # create() sets the command a video link opens with
         self.download_manager_warned = False  # the launch-failed box is once per window
         self.tab_list = []
         # Kept by the browser itself, not the main app: a setting there would be four
@@ -771,6 +812,15 @@ class BrowserWindow(QtWidgets.QWidget):
         self.closed = []  # (index, urls), newest last, for Ctrl+Shift+T
         self.profile = QtWebEngineCore.QWebEngineProfile(None if private else "F95Checker", self)
         self.cookies = CookieJar(self.profile.cookieStore(), self)
+        # At document creation rather than with integrated.js on loadFinished, so a
+        # video that fails before the page is done loading is still caught. In its own
+        # world, so a page that locks down its globals cannot break it
+        script = QtWebEngineCore.QWebEngineScript()
+        script.setSourceCode(VIDEO_FALLBACK)
+        script.setInjectionPoint(QtWebEngineCore.QWebEngineScript.InjectionPoint.DocumentCreation)
+        script.setWorldId(QtWebEngineCore.QWebEngineScript.ScriptWorldId.ApplicationWorld)
+        script.setRunsOnSubFrames(True)  # video hosts embed their players in a frame
+        self.profile.scripts().insert(script)
 
         self.setWindowIcon(icon)
         if title:
@@ -1234,6 +1284,7 @@ def create(
     proxy_config: dict | None,
     blocklist_file: str | None,
     download_manager: tuple[str, str],
+    video_browser: list[str] | None = None,
 ):
     config_qt_flags(debug, software)
     proxy_auth = apply_proxy(proxy_config)
@@ -1276,6 +1327,7 @@ def create(
     if blocklist_file and tabs and (blocker := make_blocker(blocklist_file)):
         app.window.blocker = blocker  # PyQt does not own it; a GC'd interceptor stops blocking
         app.window.profile.setUrlRequestInterceptor(blocker)
+    app.window.video_browser = video_browser
     if size:
         app.window.resize(*size)
     if pos:

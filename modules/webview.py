@@ -115,13 +115,21 @@ async def start(action: str, *args, centered=True, use_f95_cookies=True, pipe=Fa
 
 
 def create_kwargs():
-    from common.structs import ProxyType
+    from common.structs import (
+        Browser,
+        ProxyType,
+    )
     from modules import (
         colors,
         globals,
         icons,
     )
     from modules.blocklist import blocklist_path
+
+    # A video the integrated browser cannot play opens in a real one, always
+    # private: the one chosen in settings if it has a private mode, else the first
+    # installed one that does. str(): a macOS browser is a Path, and this crosses as JSON
+    video_browser = next(([*map(str, b.args), *b.private_arg] for b in (globals.settings.browser, *Browser.instances.values()) if b.args and b.private_arg), None)
 
     if globals.settings.proxy_type is ProxyType.Disabled:
         proxy_config = None
@@ -162,6 +170,7 @@ def create_kwargs():
             globals.settings.download_manager_executable,
             globals.settings.download_manager_arguments,
         ),
+        video_browser=video_browser,
     )
 
 
