@@ -158,6 +158,7 @@ def start():
                                 async def _add_game():
                                     await asyncio.sleep(0.1)
                                     await callbacks.add_games(*matches)
+                                    globals.gui.scroll_to_top = True  # New games sort to the top
                                 async_thread.run(_add_game())
                         case _:
                             self.send_resp(404)

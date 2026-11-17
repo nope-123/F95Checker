@@ -360,6 +360,7 @@ class MainGUI():
         self.scroll_anchor: tuple[int, float] = None
         self.restore_anchor: tuple[int, float] = None
         self.reordered = False
+        self.scroll_to_top = False
 
         # Setup Qt objects
         self.qt_app = QtWidgets.QApplication(sys.argv)
@@ -3707,6 +3708,9 @@ class MainGUI():
         self.restore_anchor = self.scroll_anchor if self.reordered else None
         self.scroll_anchor = None  # Picked again below, unless restoring
         self.reordered = False
+        if self.scroll_to_top:
+            imgui.set_scroll_y(0.0)
+            self.scroll_to_top = False
         if (scroll_max_y := imgui.get_scroll_max_y()) > 1.0:
             if self.switched_display_mode:
                 imgui.set_scroll_y(self.scroll_percent * scroll_max_y)
