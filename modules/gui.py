@@ -357,7 +357,7 @@ class MainGUI():
         self.sorts: dict[str, list[SortSpec]] = {}
         self.show_games_ids: dict[Tab, list[int]] = {}
         self.prev_sorted_ids: dict[int, int] = {}
-        self.scroll_anchor: tuple[int, float] = None
+        self.scroll_anchors: list[tuple[int, float]] = []
         self.restore_anchor: tuple[int, float] = None
         self.reordered = False
         self.scroll_to_top = False
@@ -3706,10 +3706,17 @@ class MainGUI():
             imgui.end_popup()
 
     def sync_scroll(self):
-        # Scroll anchoring: when the ids got reordered, the item that was topmost last frame
+        # Scroll anchoring: when the ids got reordered, an item that was visible last frame
         # is put back under the cursor, instead of letting the list jump under the user
-        self.restore_anchor = self.scroll_anchor if self.reordered else None
-        self.scroll_anchor = None  # Picked again below, unless restoring
+        anchors = self.scroll_anchors
+        self.restore_anchor = None
+        if self.reordered and anchors:
+            # The first one still next to its old neighbor, one that moved itself (like a
+            # rechecked game) would drag the view along to its new place
+            ids = self.show_games_ids[self.current_tab]
+            after = dict(zip(ids, ids[1:]))
+            self.restore_anchor = next((a for a, b in zip(anchors, anchors[1:]) if after.get(a[0]) == b[0]), anchors[0])
+        self.scroll_anchors = []  # Picked again below, unless restoring
         self.reordered = False
         if self.scroll_to_top:
             imgui.set_scroll_y(0.0)
@@ -3726,9 +3733,11 @@ class MainGUI():
         if self.restore_anchor:
             if id == self.restore_anchor[0]:
                 imgui.set_scroll_y(imgui.get_cursor_pos_y() - self.restore_anchor[1])
-                self.scroll_anchor, self.restore_anchor = self.restore_anchor, None
-        elif self.scroll_anchor is None and visible:
-            self.scroll_anchor = (id, imgui.get_cursor_pos_y() - imgui.get_scroll_y())
+                self.scroll_anchors = [self.restore_anchor]
+                self.restore_anchor = ()  # Done, rows below are still at the old scroll this frame
+        elif self.restore_anchor is None and visible and imgui.get_scroll_y() > 0.0:
+            # At the very top it stays there, so whatever sorts first shows up
+            self.scroll_anchors.append((id, imgui.get_cursor_pos_y() - imgui.get_scroll_y()))
 
     def games_table_id(self):
         tab_id = self.current_tab.id if self.current_tab else -1
