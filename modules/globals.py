@@ -5,6 +5,7 @@ import re
 import shlex
 import shutil
 import sys
+import threading
 
 from common.structs import (
     Browser,
@@ -206,6 +207,7 @@ refresh_task: Future = None
 games: dict[int, Game] = None
 cookies: dict[str, str] = None
 popup_stack: list[Popup] = []
+popup_stack_lock = threading.RLock()
 browser_daemon: DaemonPipe = None
 api_errors: dict[str, set[int]] = {}
 missing_threads: set[int] = set()
