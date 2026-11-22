@@ -17,33 +17,41 @@ def calls(fn, *args, **kwargs):
 
 
 def test_css_redirect():
-    url, js, kwargs = calls(webview.css_redirect, "https://f95zone.to/x", "a.host_link", minimal=False)
+    url, js, kwargs = calls(webview.xpath_css_redirect, "https://f95zone.to/x", None, "a.host_link", minimal=False)
     assert url == "https://f95zone.to/x", url
     assert js == "document.querySelector('a.host_link')?.click();", js
     # kwargs ride through untouched, or minimal=copy stops reaching the window
     assert kwargs == {"minimal": False}, kwargs
     # no selector is a plain wait-for-the-redirect window, with nothing to click
-    assert calls(webview.css_redirect, "https://f95zone.to/x")[1] is None
+    assert calls(webview.xpath_css_redirect, "https://f95zone.to/x")[1] is None
 
 
 def test_xpath_redirect():
     # no trailing index means the first match
-    _, js, _ = calls(webview.xpath_redirect, "https://f95zone.to/x", "//a[@href]")
+    _, js, _ = calls(webview.xpath_css_redirect, "https://f95zone.to/x", "//a[@href]")
     assert "document.evaluate('//a[@href]', document" in js, js
     assert ".snapshotItem(0)?.click();" in js, js
     # a trailing [n] is xpath's 1-based index, and it must come off the expression:
     # evaluate() returns the whole node set and the index picks out of the snapshot
-    _, js, _ = calls(webview.xpath_redirect, "https://f95zone.to/x", "//a[@href][3]")
+    _, js, _ = calls(webview.xpath_css_redirect, "https://f95zone.to/x", "//a[@href][3]")
     assert "document.evaluate('//a[@href]', document" in js, js
     assert ".snapshotItem(2)?.click();" in js, js
     # only a trailing index, never a predicate in the middle of the expression
-    _, js, _ = calls(webview.xpath_redirect, "https://f95zone.to/x", "//a[2]/b[@x]")
+    _, js, _ = calls(webview.xpath_css_redirect, "https://f95zone.to/x", "//a[2]/b[@x]")
     assert "document.evaluate('//a[2]/b[@x]', document" in js, js
     assert ".snapshotItem(0)?.click();" in js, js
-    assert calls(webview.xpath_redirect, "https://f95zone.to/x")[1] is None
+    assert calls(webview.xpath_css_redirect, "https://f95zone.to/x")[1] is None
+
+
+def test_xpath_and_css_redirect():
+    # the masked-link resolver passes both, and both clicks run on every load
+    _, js, _ = calls(webview.xpath_css_redirect, "https://f95zone.to/x", "//a[2]", ".f95dl-continue")
+    assert ".snapshotItem(1)?.click();" in js, js
+    assert "document.querySelector('.f95dl-continue')?.click();" in js, js
 
 
 if __name__ == "__main__":
     test_css_redirect()
     test_xpath_redirect()
+    test_xpath_and_css_redirect()
     print("ok")

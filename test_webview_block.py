@@ -156,8 +156,8 @@ def test_typed_address_keeps_its_redirects():
 
 def test_masked_f95zone_link_stays_in_the_tab():
     """A masked f95zone link is a page you land on and click through to the host it
-    stood for (see callbacks.redirect_masked_link, which resolves one by clicking
-    a.host_link). So the hop that leaves f95zone looks exactly like a page sending the
+    stood for (see callbacks.redirect_xpath_masked_link, which resolves one by clicking
+    .f95dl-continue). So the hop that leaves f95zone looks exactly like a page sending the
     tab somewhere else, and it still has to stay in the tab you clicked it in."""
     port = serve({
         "/threads/1": (200, {"Content-Type": "text/html"}, b"<html><body>thread</body></html>"),

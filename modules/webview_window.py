@@ -958,7 +958,7 @@ class BrowserWindow(QtWidgets.QWidget):
 
     @property
     def webview(self):
-        # Kept so cookies()/css_redirect()/xpath_redirect() need no changes
+        # Kept so cookies()/xpath_css_redirect() need no changes
         return self.current_tab.view
 
     def new_tab(self, url: str = None, background: bool = False, opener: WebTab = None):
@@ -1321,7 +1321,7 @@ def create(
         proxy_auth=proxy_auth,
         title=title,
     )
-    # Gated on tabs, never buttons: cookies(), css_redirect() and xpath_redirect() all
+    # Gated on tabs, never buttons: cookies() and xpath_css_redirect() both
     # pass tabs=False unconditionally, but the resolvers keep the chrome on their default
     # path, and blocking a request there could stall the very redirect they wait on
     if blocklist_file and tabs and (blocker := make_blocker(blocklist_file)):

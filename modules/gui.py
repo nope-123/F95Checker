@@ -2850,8 +2850,7 @@ class MainGUI():
                     self.draw_hover_text(
                         "Left clicking opens the webpage in your chosen browser.\n"
                         "Middle clicking copies the link to your clipboard.\n\n"
-                        "There's 3 types of links that work slightly different:\n"
-                        f"{icons.link}Direct: Plain download link, retrieved with automated integrated browser\n"
+                        "There's 2 types of links that work slightly different:\n"
                         f"{icons.domino_mask}Masked: CAPTCHA protected link, unmasked with automated integrated browser\n"
                         f"{icons.open_in_app}Forum: Link internal to F95zone, no special processing\n"
                     )
@@ -2875,18 +2874,19 @@ class MainGUI():
                                         # hours: find this account's own copy in the thread by its key instead
                                         link = f"//a[contains(@href,'/dl/') and contains(@href,'k={key[1]}')]"
                                     if link.startswith("//"):
-                                        # XPath expression
-                                        if imgui.small_button(icons.link + mirror):
-                                            callbacks.redirect_xpath_link(game.url, link)
-                                        if imgui.is_item_clicked(imgui.MOUSE_BUTTON_MIDDLE):
-                                            callbacks.redirect_xpath_link(game.url, link, copy=True)
-                                    elif link.startswith(f"{api.f95_host}/masked/"):
-                                        # Masked link
-                                        if imgui.small_button(icons.domino_mask + mirror):
-                                            callbacks.redirect_masked_link(link)
-                                        if imgui.is_item_clicked(imgui.MOUSE_BUTTON_MIDDLE):
-                                            callbacks.redirect_masked_link(link, copy=True)
-                                    elif link.startswith(api.f95_host):
+                                        if f"{api.f95_host}/dl/" in link:
+                                            # XPath expression for masked link
+                                            if imgui.small_button(icons.domino_mask + mirror):
+                                                callbacks.redirect_xpath_masked_link(game.url, link)
+                                            if imgui.is_item_clicked(imgui.MOUSE_BUTTON_MIDDLE):
+                                                callbacks.redirect_xpath_masked_link(game.url, link, copy=True)
+                                        else:
+                                            # XPath expression for direct link, doesn't seem to be used anymore but let's keep it for now
+                                            if imgui.small_button(icons.link + mirror):
+                                                callbacks.redirect_xpath_link(game.url, link)
+                                            if imgui.is_item_clicked(imgui.MOUSE_BUTTON_MIDDLE):
+                                                callbacks.redirect_xpath_link(game.url, link, copy=True)
+                                    elif link.startswith(f"{api.f95_host}/"):
                                         # F95zone link
                                         if imgui.small_button(icons.open_in_app + mirror):
                                             callbacks.open_webpage(link)

@@ -228,8 +228,7 @@ def cookies(url: str, title_search: str | None = None, *, cookies: dict[str, str
 
 def _click_redirect(url: str, js: str = None, *, minimal=True, cookies: dict[str, str] = {}, cookies_domain: str = None, **kwargs):
     """A resolver window: open url, click js on every load, and hand back the first url
-    that leaves the host it started on. css_redirect and xpath_redirect are this plus
-    their own one-line click."""
+    that leaves the host it started on. xpath_css_redirect is this plus its own click."""
     if minimal:
         kwargs |= dict(
             buttons=False,
@@ -266,21 +265,23 @@ def _click_redirect(url: str, js: str = None, *, minimal=True, cookies: dict[str
     app.exec()
 
 
-def css_redirect(url: str, css_selector: str = None, **kwargs):
-    _click_redirect(url, css_selector and f"document.querySelector({css_selector!r})?.click();", **kwargs)
-
-
-def xpath_redirect(url: str, xpath_expression: str = None, **kwargs):
-    # A trailing [n] is an xpath index, but evaluate() returns the whole node set, so
-    # strip it off the expression and pick that item out of the snapshot instead
-    index = 0
-    if xpath_expression and (match := re.search(r"\[(\d+)\]$", xpath_expression)):
-        index = int(match.group(1)) - 1
-        xpath_expression = xpath_expression[:match.start()]
-    _click_redirect(url, xpath_expression and (
-        f"document.evaluate({xpath_expression!r}, document, null,"
-        f" XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem({index})?.click();"
-    ), **kwargs)
+def xpath_css_redirect(url: str, xpath_expression: str = None, css_selector: str = None, **kwargs):
+    # Either, both or neither: every given click runs on every load
+    js = []
+    if xpath_expression:
+        # A trailing [n] is an xpath index, but evaluate() returns the whole node set, so
+        # strip it off the expression and pick that item out of the snapshot instead
+        index = 0
+        if match := re.search(r"\[(\d+)\]$", xpath_expression):
+            index = int(match.group(1)) - 1
+            xpath_expression = xpath_expression[:match.start()]
+        js.append(
+            f"document.evaluate({xpath_expression!r}, document, null,"
+            f" XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem({index})?.click();"
+        )
+    if css_selector:
+        js.append(f"document.querySelector({css_selector!r})?.click();")
+    _click_redirect(url, " ".join(js) or None, **kwargs)
 
 
 def user_agent(**kwargs):
