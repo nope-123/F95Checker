@@ -19,10 +19,11 @@ RATELIMIT = aiolimiter.AsyncLimiter(max_rate=1, time_period=0.25)
 TIMEOUT = aiohttp.ClientTimeout(total=30, connect=30, sock_read=30, sock_connect=30)
 LOGIN_ERROR_MESSAGES = (
     b'<a href="/login/" data-xf-click="overlay">Log in or register now.</a>',
-    b"<title>Log in | F95zone</title>",
+    b"<title>Log in | F95zone",
     b'<form action="/login/login" method="post" class="block"',
 )
 RATELIMIT_FORUM_ERRORS = (
+    b'<body data-template="f95rl_paused">',
     b"<title>429 Too Many Requests</title>",
     b"<h1>429 Too Many Requests</h1>",
     b"<title>Error 429</title>",
@@ -33,7 +34,7 @@ RATELIMIT_API_ERRORS = (
     "You have been temporarily blocked because of a large amount of requests, please try again later",
 )
 CLOUDFLARE_CAPTCHA_MESSAGES = (
-    b'(function(){window._cf_chl_opt = {',
+    b"(function(){window._cf_chl_opt = {",
     b"<title>Just a moment...</title>",
 )
 TEMP_ERROR_MESSAGES = (
