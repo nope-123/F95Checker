@@ -230,6 +230,62 @@ def test_popup_ad_does_not_keep_its_tab():
     assert urls == [f"http://localhost:{port}/page"], f"a popup ad kept its tab: {urls}"
 
 
+def test_popup_tabs_get_a_page_of_their_own():
+    """Qt 6.7.3 crashes the page process when a popup is handed to its tab with openIn(),
+    and the opener shares that process with every tab it opened, so a run of links opened
+    off one page blanked them all at once. Only some real pages set it off (gamestorylog's
+    did, every time), never a page simple enough to serve here, so this checks what
+    avoids it instead: the tab loads the url itself, and so has no opener to share with."""
+    port = serve({
+        "/page": (200, {"Content-Type": "text/html"}, (
+            b"<html><body>page<script>setTimeout(function(){"
+            b"for (const p of ['/a', '/b']) window.open(p);"
+            b"}, 300)</script></body></html>")),
+        **{p: (200, {"Content-Type": "text/html"}, b"<html><body>linked page</body></html>")
+           for p in ("/a", "/b")},
+    })
+    app, window = browser()
+    window.new_tab(f"http://localhost:{port}/page")
+    openers = []
+    QtCore.QTimer.singleShot(4000, lambda: [
+        tab.page.runJavaScript("window.opener === null", 0, openers.append)
+        for tab in window.tab_list[1:]
+    ])
+
+    urls = tabs_after(app, window, 6000)
+    assert urls == [f"http://localhost:{port}{p}" for p in ("/page", "/a", "/b")], \
+        f"the popups did not each get their own tab: {urls}"
+    assert openers == [True, True], f"a popup tab was handed over with its opener: {openers}"
+
+
+def test_f95zone_attachment_popup_is_downloaded_not_rendered():
+    """The target=_blank half of the attachment case below. A popup tab loads its own url
+    now, which reaches navigation_requested looking typed, and typed is exempt from the
+    attachment rule. It must still come out a download, and the blank tab close."""
+    port = serve({
+        "/threads/1": (200, {"Content-Type": "text/html"}, (
+            b"<html><body>thread<script>setTimeout(function(){"
+            b"window.open('http://attachments.f95zone.to:'+location.port+'/2024/04/patch.rpy');"
+            b"}, 300)</script></body></html>")),
+        "/2024/04/patch.rpy": (200, {"Content-Type": "text/plain",
+                                     "Content-Disposition": 'inline; filename="patch.rpy"'}, b"# patch"),
+    })
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] += ' --host-resolver-rules="MAP *f95zone.to 127.0.0.1"'
+    app, window = browser()
+    window.new_tab(f"http://f95zone.to:{port}/threads/1")
+    seen = {}
+    def downloaded(download):
+        seen["url"] = download.url().url()
+        download.cancel()
+        window.close_download_tab(download)  # what create()'s handler does
+    window.profile.downloadRequested.connect(downloaded)
+
+    urls = tabs_after(app, window, 6000)
+    assert seen.get("url") == f"http://attachments.f95zone.to:{port}/2024/04/patch.rpy", \
+        f"the attachment was not handed over as a download: {seen}"
+    assert urls == [f"http://f95zone.to:{port}/threads/1"], f"the attachment tab was left behind: {urls}"
+
+
 def test_same_site_popup_keeps_its_confirmation_page():
     """Not every popup is an ad. A host that puts a confirmation page in front of the
     file opens it exactly the way an ad opens itself -- Google Drive's "can't scan this
@@ -340,6 +396,8 @@ if __name__ == "__main__":
         "masked": test_masked_f95zone_link_stays_in_the_tab,
         "dl": test_f95zone_download_page_is_clicked_through,
         "popup": test_popup_ad_does_not_keep_its_tab,
+        "popuppage": test_popup_tabs_get_a_page_of_their_own,
+        "popupattachment": test_f95zone_attachment_popup_is_downloaded_not_rendered,
         "confirm": test_same_site_popup_keeps_its_confirmation_page,
         "download": test_download_tab_closes_itself,
         "attachment": test_f95zone_attachment_is_downloaded_not_rendered,

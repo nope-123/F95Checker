@@ -124,6 +124,7 @@ class WebTab:
         self.probe = False
         self.started = None  # the navigation type a redirect chain began as
         self.opener = None
+        self.popup = False  # until the first load of a popup tab, see new_window_requested
         # Find state lives on the tab: the window has one bar, and it mirrors
         # whichever tab is current
         self.find_open = False
@@ -194,8 +195,12 @@ class WebTab:
             and "f95zone.to" not in self.view.url().host()
             and not same_site(request.requestedUrl().host(), self.view.url().host())
         )
-        # openIn() preserves the opener relationship, setUrl() does not
-        request.openIn(tab.page)
+        # Loaded, not handed over with request.openIn(). That keeps the opener, and with it
+        # the opener's page process, and Qt 6.7.3 crashes that process for it -- blanking
+        # the opener and every tab it opened at once. Costs window.opener: a page that
+        # scripts the popup it opened, or posts a form into it, gets a plain load instead
+        tab.popup = True
+        tab.view.setUrl(request.requestedUrl())
 
     def navigation_requested(self, request):
         from PyQt6 import QtWebEngineCore
@@ -229,6 +234,11 @@ class WebTab:
         # all the way to where it lands (google.pt hops to google.com), while a click's
         # redirects stay guarded hop by hop. Unknown start keeps it a plain redirect
         kind = request.navigationType()
+        if self.popup and kind is NavigationType.TypedNavigation:
+            # The popup's own load, which setUrl() makes look typed. The page asked for
+            # it, not you, so it is judged as the link it was: no typed exemption
+            self.popup = False
+            kind = NavigationType.LinkClickedNavigation
         if kind is NavigationType.RedirectNavigation:
             kind = self.started or kind
         else:
