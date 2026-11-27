@@ -55,10 +55,11 @@ def browser(tabs=True):
 
 
 def opened(window, *names):
-    """One tab per name, at about:blank#name: the view reports a url it was given
-    straight away, so rows can be told apart without loading anything"""
-    tabs = [window.new_tab(f"about:blank#{name}", background=bool(window.tab_list)) for name in names]
-    QtWidgets.QApplication.processEvents()
+    """One tab per name, at a data: page ending in #name, so rows can be told apart.
+    Waits for each load to start: Qt 6.10+ holds back a #fragment load in a background
+    tab, and it then overrides whatever a case loads into the tab in between"""
+    tabs = [window.new_tab(f"data:text/html,#{name}", background=bool(window.tab_list)) for name in names]
+    assert until(lambda: all(tab.loading or tab.view.history.count() for tab in tabs)), "the tabs never started loading"
     return tabs
 
 

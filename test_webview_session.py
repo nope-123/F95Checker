@@ -26,6 +26,7 @@ from PyQt6 import (  # noqa: E402
     QtCore,
     QtGui,
     QtWidgets,
+    sip,
 )
 
 # Quitting closes every visible window, which reaches the "close them all?" guard
@@ -51,6 +52,15 @@ def window_(private=False, tabs=True):
     window.resize(900, 600)
     window.show()
     return window
+
+
+def quit_(window):
+    """Closed and deleted, as by its browser process quitting, so the next window is
+    the next launch. Two windows alive on the one on-disk profile hang Qt 6.12's exit.
+    Deleted later, behind the views close() deletes, so its profile outlives its pages"""
+    window.close()
+    window.deleteLater()
+    assert until(lambda: sip.isdeleted(window)), "the window was never deleted"
 
 
 def app_():
@@ -103,7 +113,7 @@ def test_the_last_tabs_come_back_before_the_new_link():
     app = app_()
     first = window_()
     opened(first, "a", "b")
-    first.close()
+    quit_(first)
     second = window_()
     second.restore_session()  # what create() does before the clicked link's tab
     second.new_tab("about:blank#clicked")
@@ -116,7 +126,7 @@ def test_with_restore_off_they_wait_for_ctrl_shift_t():
     app = app_()
     first = window_()
     opened(first, "a", "b")
-    first.close()
+    quit_(first)
     settings().setValue("restore_tabs", False)
     second = window_()
     second.restore_session()
@@ -130,7 +140,7 @@ def test_a_lone_tab_waits_for_ctrl_shift_t_too():
     app = app_()
     first = window_()
     opened(first, "a")
-    first.close()
+    quit_(first)
     second = window_()
     second.restore_session()
     second.new_tab("about:blank#clicked")

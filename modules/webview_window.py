@@ -384,6 +384,10 @@ class WebTab:
     def url_changed(self, url: QtCore.QUrl):
         if self.is_current:
             self.window.set_url_text(url.url())
+        else:
+            # Qt 6.10+ sizes a page only when its view draws, and a background tab never has:
+            # it lays out at 0x0. grab() draws it once, deferred past the new view's layout
+            QtCore.QTimer.singleShot(0, self.view.grab)
         self.window.sidebar.refresh()  # the row's tooltip, and what search matches
         self.window.save_session()
 

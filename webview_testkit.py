@@ -4,6 +4,7 @@ import tempfile
 import threading
 
 from PyQt6 import QtCore
+from PyQt6 import QtWebEngineWidgets  # noqa: F401 -- Qt 6.12 refuses it once a QApplication exists
 from PyQt6.QtTest import QTest
 
 

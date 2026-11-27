@@ -19,6 +19,7 @@ config_qt_flags(debug=False, software=True)
 from PyQt6 import (  # noqa: E402
     QtCore,
     QtGui,
+    QtWebEngineWidgets,  # noqa: F401 -- Qt 6.12 refuses it once the QApplication exists
     QtWidgets,
 )
 
